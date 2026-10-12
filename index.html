@@ -470,6 +470,8 @@ function reset() {
   runGold = 0;
   bonusScore = 0;
   popups = [];
+  sparks = [];
+  bossBanner = null;
   wave = 1;
   waveBanner = 0;
   ragdoll = null;
@@ -779,7 +781,15 @@ const sfx = {
   clang: () => { beep(1900, 0.07, { vol: 0.05 }); beep(950, 0.14, { type: "triangle", vol: 0.05, delay: 0.02 }); },
   laser: () => beep(1200, 0.12, { type: "sawtooth", vol: 0.025, slideTo: 1800 }),
   wave: () => { beep(440, 0.12); beep(554, 0.12, { delay: 0.13 }); beep(659, 0.22, { delay: 0.26 }); },
-  coin: () => { beep(990, 0.05, { vol: 0.04 }); beep(1480, 0.1, { vol: 0.04, delay: 0.05 }); }
+  coin: () => { beep(990, 0.05, { vol: 0.04 }); beep(1480, 0.1, { vol: 0.04, delay: 0.05 }); },
+  warn: () => beep(900, 0.08, { vol: 0.04 }),
+  arrow: () => beep(700, 0.1, { type: "triangle", vol: 0.05, slideTo: 260 }),
+  boom: () => beep(110, 0.35, { type: "sawtooth", vol: 0.09, slideTo: 40 }),
+  screech: () => beep(1800, 0.18, { type: "sawtooth", vol: 0.03, slideTo: 2600 }),
+  dash: () => beep(300, 0.18, { type: "sawtooth", vol: 0.05, slideTo: 900 }),
+  chest: () => { [660, 880, 1100, 1320].forEach((f, i) => beep(f, 0.12, { vol: 0.045, delay: i * 0.07 })); },
+  slam: () => beep(90, 0.3, { vol: 0.1, slideTo: 40 }),
+  boss: () => { beep(110, 0.4, { type: "sawtooth", vol: 0.08 }); beep(82, 0.6, { type: "sawtooth", vol: 0.08, delay: 0.3 }); }
 };
 
 // --- Input ---
@@ -900,18 +910,29 @@ const SPAWNS = [
   { from: 200, weight: (t) => 25 + 10 * t,    make: makeDrone },
   { from: 250, weight: (t) => 7 + 3 * t,      make: makeFirePit },
   { from: 100, weight: (t) => 6 + 3 * t,      make: makeSpikeBall },
-  { from: 150, weight: (t) => 6 + 3 * t,      make: makeLaserGate }
+  { from: 150, weight: (t) => 6 + 3 * t,      make: makeLaserGate },
+  // Newer arrivals. extra = seconds of breathing room added after it spawns; when = only if true.
+  { from: 100, weight: () => 5,               make: makeChest },
+  { from: 250, weight: (t) => 9 + 2 * t,      make: makeArcher,  when: noRanged, extra: 1.0 },
+  { from: 350, weight: (t) => 9 + 4 * t,      make: makeNinja,   extra: 0.7 },
+  { from: 450, weight: (t) => 8 + 3 * t,      make: makeBat,     extra: 0.4 },
+  { from: 550, weight: (t) => 8 + 3 * t,      make: makePhantom, extra: 0.4 },
+  { from: 700, weight: (t) => 7 + 3 * t,      make: makeBrute,   extra: 0.8 },
+  { from: 850, weight: (t) => 7 + 2 * t,      make: makeBomber,  when: noRanged, extra: 1.0 }
 ];
 
+// Spawns one obstacle; returns the extra breathing room it needs
 function spawnObstacle() {
   const t = waveIntensity();
-  const open = SPAWNS.filter((s) => score >= s.from);
+  const open = SPAWNS.filter((s) => score >= s.from && (!s.when || s.when()));
   let roll = Math.random() * open.reduce((sum, s) => sum + s.weight(t), 0);
   for (const s of open) {
     roll -= s.weight(t);
-    if (roll <= 0) return s.make(t);
+    if (roll <= 0) { s.make(t); return s.extra || 0; }
   }
-  open[open.length - 1].make(t);
+  const last = open[open.length - 1];
+  last.make(t);
+  return last.extra || 0;
 }
 
 // Ground rocks in groups that grow taller and wider each wave
@@ -1021,6 +1042,374 @@ function laserPhase(o) { return o.clock % o.cycle; }
 function laserOn(o) { return laserPhase(o) < o.onTime; }
 function laserWarning(o) { return laserPhase(o) > o.cycle - LASER_WARN; }
 
+// --- More enemies and the treasure chest ---
+// Archers and bombers run along at the right edge of the screen and shoot or throw
+// from there, then leave. The others charge, dive or fight up close. Each kind has a
+// mover (MOVERS), a sword reaction (SLASH) and a picture (OBSTACLE_DRAW).
+const RANGED = new Set(["archer", "bomber"]);
+const BONUS_JUMP = new Set(["enemy", "drone", "ninja", "brute", "phantom"]);  // +10 for jumping over
+const SHOOTER_X = W - 80;                  // where archers and bombers stand
+const BOSS_X = 400, BOSS_FIGHT_X = 128;    // where the boss waits, and where he stands to be hit
+const randInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const rand = (a, b) => a + Math.random() * (b - a);
+
+let sparks = [];                // little particles: feathers, sparks, gold glints
+let bossBanner = null;          // { title, sub, t } shown big for a moment
+
+// Only one shooter at a time, and none during a boss fight
+function noRanged() { return !obstacles.some((o) => RANGED.has(o.type) || o.type === "boss"); }
+
+// Fields getPose() reads, so any of these can be drawn as a stickman
+function person(fields) {
+  return { onGround: true, ducking: false, vy: 0, attack: 0, runPhase: Math.random() * 6, ...fields };
+}
+
+function burst(x, y, n, color, power = 220) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, v = power * (0.3 + Math.random() * 0.7);
+    sparks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 80, t: 0,
+                  life: 0.4 + Math.random() * 0.4, color, r: 1.5 + Math.random() * 1.5 });
+  }
+}
+
+// Coins burst out and a gold "+N" floats up
+function dropGold(x, y, count, popupY = y - 26) {
+  popups.push({ x, y: popupY, t: 0, text: "+" + count, gold: true, life: 1.1 });
+  for (let i = 0; i < count; i++) {
+    coins.push({ x, y, vx: 30 + Math.random() * 170, vy: -300 - Math.random() * 240, spin: Math.random() * 6 });
+  }
+}
+
+// Runs [time, fn] events once each as o.timer passes their time; true once past `end`
+function timeline(o, dt, events, end) {
+  o.timer += dt;
+  while (o.next < events.length && o.timer >= events[o.next][0]) events[o.next++][1]();
+  return o.timer >= end;
+}
+function setState(o, state) { o.state = state; o.timer = 0; o.next = 0; }
+
+const MOVERS = {};   // type -> (o, dt): moves one obstacle; types without one just scroll
+const SLASH = {};    // type -> (o): what happens when the sword catches it
+
+// Treasure chest: harmless, slash it open for gold. If you ignore it, it just passes by.
+function makeChest() {
+  obstacles.push({ type: "chest", x: W + 20, y: GROUND_Y - 26, w: 36, h: 26,
+                   open: false, openT: 0, gold: randInt(8, 14) + 2 * wave });
+}
+MOVERS.chest = (o, dt) => { o.x -= speed * dt; if (o.open) o.openT += dt; };
+SLASH.chest = (o) => {
+  if (o.open) return;
+  o.open = true;
+  dropGold(o.x + o.w / 2, o.y, o.gold, o.y - 14);
+  burst(o.x + o.w / 2, o.y + 4, 14, GOLD, 260);
+  shakeTime = Math.max(shakeTime, 0.12);
+  sfx.chest();
+};
+
+// Archer: keeps pace at the right edge and fires three arrows, high (duck) or low (jump).
+// A red line shows where the next arrow will fly, half a second before it does.
+function makeArcher() {
+  obstacles.push(person({ type: "archer", look: "archer", x: W + 30, y: GROUND_Y - player.standH,
+    w: player.w, h: player.standH, state: "enter", timer: 1.1, shots: 3,
+    low: Math.random() < 0.5, draw: 0, warn: false }));
+}
+const arrowY = (low) => (low ? GROUND_Y - 14 : GROUND_Y - 48);
+MOVERS.archer = (o, dt) => {
+  o.runPhase += dt * speed / 24;
+  if (o.state === "enter") {
+    o.x -= (speed + 160) * dt;
+    if (o.x <= SHOOTER_X) { o.x = SHOOTER_X; o.state = "aim"; }
+  } else if (o.state === "aim") {
+    o.timer -= dt;
+    o.warn = o.timer < 0.5;
+    o.draw = o.warn ? 1 - Math.max(0, o.timer) / 0.5 : 0;
+    if (o.warn && !o.warned) { o.warned = true; sfx.warn(); }
+    if (o.timer <= 0) {
+      obstacles.push({ type: "arrow", x: o.x - 8, y: arrowY(o.low) - 3, w: 28, h: 6, vx: -540 });
+      sfx.arrow();
+      o.shots--; o.warned = false; o.warn = false; o.draw = 0;
+      if (o.shots > 0) { o.timer = 1.25; o.low = Math.random() < 0.5; } else o.state = "leave";
+    }
+  } else {
+    o.x += 280 * dt;
+    if (o.x > W + 60) o.gone = true;
+  }
+};
+MOVERS.arrow = (o, dt) => { o.x += o.vx * dt; };
+SLASH.arrow = (o) => {   // cut an arrow out of the air
+  o.gone = true;
+  dropGold(o.x, o.y, 2, o.y - 16);
+  burst(o.x, o.y, 6, "#c9a36a", 180);
+  sfx.clang();
+};
+
+// Bomber: lobs two bombs. A red ring shows where each lands; it explodes on landing and the
+// fire sweeps past, so be in the air then. A slash catches a bomb before it lands.
+function makeBomber() {
+  obstacles.push(person({ type: "bomber", look: "bomber", x: W + 30, y: GROUND_Y - player.standH,
+    w: player.w, h: player.standH, state: "enter", timer: 1.0, shots: 2, windup: 0, holding: true }));
+}
+const BOMB_FLIGHT = 0.85, BOMB_GRAVITY = 1500, BLAST_R = 44;
+function throwBomb(x, y) {
+  const tx = player.x + player.w + 12 + Math.random() * 26;   // lands just in front of the player
+  const ty = GROUND_Y - 7;
+  obstacles.push({ type: "bomb", x, y, w: 14, h: 14, targetX: tx, flight: 0, spin: 0,
+    vx: (tx - x - 7) / BOMB_FLIGHT, vy: (ty - (y + 7) - 0.5 * BOMB_GRAVITY * BOMB_FLIGHT * BOMB_FLIGHT) / BOMB_FLIGHT });
+}
+MOVERS.bomber = (o, dt) => {
+  o.runPhase += dt * speed / 24;
+  if (o.state === "enter") {
+    o.x -= (speed + 160) * dt;
+    if (o.x <= SHOOTER_X) { o.x = SHOOTER_X; o.state = "aim"; }
+  } else if (o.state === "aim") {
+    o.timer -= dt;
+    o.windup = o.timer < 0.45 ? 1 : 0;
+    o.holding = true;
+    if (o.windup && !o.warned) { o.warned = true; sfx.warn(); }
+    if (o.timer <= 0) {
+      throwBomb(o.x - 12, o.y + 6);
+      o.holding = false; o.windup = 0; o.warned = false; o.shots--;
+      if (o.shots > 0) o.timer = 1.5; else o.state = "leave";
+    }
+  } else {
+    o.x += 280 * dt;
+    if (o.x > W + 60) o.gone = true;
+  }
+};
+MOVERS.bomb = (o, dt) => {
+  o.flight += dt;
+  o.spin += dt * 10;
+  o.vy += BOMB_GRAVITY * dt;
+  o.x += o.vx * dt;
+  o.y += o.vy * dt;
+  if (o.y + 14 >= GROUND_Y) {
+    o.gone = true;
+    obstacles.push({ type: "blast", x: o.x + 7, y: GROUND_Y - 1, w: 1, h: 1, r: BLAST_R, t: 0, life: 0.45 });
+    shakeTime = Math.max(shakeTime, 0.15);
+    burst(o.x + 7, GROUND_Y - 4, 10, "#ff9a2a", 280);
+    sfx.boom();
+  }
+};
+SLASH.bomb = (o) => {
+  o.gone = true;
+  dropGold(o.x + 7, o.y, 3, o.y - 16);
+  burst(o.x + 7, o.y + 7, 12, "#ffd23f", 240);
+  popups.push({ x: o.x + 7, y: o.y - 34, t: 0, text: "DEFUSED" });
+  sfx.clang();
+};
+MOVERS.blast = (o, dt) => {
+  o.x -= speed * dt;
+  o.t += dt;
+  if (o.t >= o.life) o.gone = true;
+};
+
+// Ninja: runs in, stops and crouches (red flash), then leaps at you very fast.
+// Jump over the leap or slash him as he arrives.
+function makeNinja(t) {
+  obstacles.push(person({ type: "ninja", look: "ninja", x: W + 30, y: GROUND_Y - player.standH,
+    w: player.w, h: player.standH, run: 90 + 60 * t, state: "run", timer: 0,
+    holdX: Math.min(W - 50, player.x + player.w + 250 + 0.3 * speed) }));
+}
+MOVERS.ninja = (o, dt) => {
+  if (o.state === "run") {
+    o.x -= (speed + o.run) * dt;
+    o.runPhase += dt * (o.run + 250) / 24;
+    if (o.x <= o.holdX) { o.x = o.holdX; setState(o, "hold"); o.ducking = true; sfx.warn(); }
+  } else if (o.state === "hold") {
+    o.runPhase += dt * speed / 40;
+    o.timer += dt;
+    if (o.timer >= 0.55) { setState(o, "dash"); o.ducking = false; o.onGround = false; o.vy = 0; sfx.dash(); }
+  } else {
+    o.x -= 720 * dt;
+    if (o.x < -80) o.gone = true;
+  }
+};
+SLASH.ninja = (o) => killEnemy(o, randInt(2, 4));
+
+// Brute: big and slow, takes three sword hits (each shoves him back) and pays well
+function makeBrute(t) {
+  const run = 40 + 20 * t;
+  obstacles.push(person({ type: "brute", look: "brute", scale: 1.6, x: arrivalX(speed + run),
+    y: GROUND_Y - 96, w: 42, h: 96, run, hp: 3, maxHp: 3, stagger: 0 }));
+}
+MOVERS.brute = (o, dt) => {
+  // A hit makes him stumble back and hold his distance just long enough for the
+  // sword to swing again; otherwise the ground would carry him into you first
+  o.stagger = Math.max(0, o.stagger - dt);
+  o.x -= (o.stagger > 0 ? 0 : speed + o.run) * dt;
+  o.runPhase += dt * (o.run + 250) / 30;
+};
+SLASH.brute = (o) => {
+  if (o.hitSwing === player.swingId) return;
+  o.hitSwing = player.swingId;
+  o.hp--;
+  if (o.hp <= 0) return killEnemy(o, randInt(8, 10));
+  o.x += 34;
+  o.stagger = 0.4;
+  shakeTime = Math.max(shakeTime, 0.1);
+  burst(o.x + 4, o.y + 40, 8, "#ffb04a", 240);
+  popups.push({ x: o.x + o.w / 2, y: o.y - 10, t: 0, text: "HIT" });
+  sfx.clang();
+};
+
+// Bat: flies in a wave, hovers a moment (red eyes), then dives at head height.
+// Duck under the dive, or slash it. Jumping into it hurts.
+function makeBat() {
+  const y = rand(80, 125);
+  obstacles.push({ type: "bat", look: "bat", x: W + 30, y, baseY: y, w: 30, h: 18,
+    state: "fly", t: Math.random() * 6, vx: 0, vy: 0, hover: 0 });
+}
+MOVERS.bat = (o, dt) => {
+  o.t += dt;
+  if (o.state === "fly") {
+    o.x -= (speed + 40) * dt;
+    o.y = o.baseY + Math.sin(o.t * 5) * 18;
+    if (o.x - player.x < 330 + 0.2 * speed) { o.state = "hover"; o.hover = 0.4; sfx.screech(); }
+  } else if (o.state === "hover") {
+    o.y += Math.sin(o.t * 30) * 0.6;
+    o.hover -= dt;
+    if (o.hover <= 0) {
+      const dx = player.x + 6 - (o.x + 15), dy = GROUND_Y - 48 - (o.y + 9), d = Math.hypot(dx, dy);
+      o.vx = dx / d * 600; o.vy = dy / d * 600;
+      o.state = "dive";
+    }
+  } else if (o.state === "dive") {
+    o.x += o.vx * dt; o.y += o.vy * dt;
+    if (o.x < player.x - 50) { o.state = "away"; o.vx = -120; o.vy = -260; }
+  } else {
+    o.x += o.vx * dt; o.y += o.vy * dt;
+    if (o.y < -40 || o.x < -60) o.gone = true;
+  }
+};
+SLASH.bat = (o) => {
+  o.gone = true;
+  shakeTime = Math.max(shakeTime, 0.08);
+  burst(o.x + 15, o.y + 9, 10, "#555", 200);
+  dropGold(o.x + 15, o.y + 9, randInt(2, 3), o.y - 10);
+  sfx.kill();
+};
+
+// Phantom: fades between solid and ghost. As a ghost it can't hurt you and your sword
+// passes through; it flickers just before it turns solid again.
+function makePhantom(t) {
+  const run = 70 + 70 * t;
+  obstacles.push(person({ type: "phantom", look: "phantom", x: arrivalX(speed + run),
+    y: GROUND_Y - player.standH, w: player.w, h: player.standH, run, t: Math.random() * 1.8, solid: true }));
+}
+const PHANTOM_CYCLE = 1.8;
+MOVERS.phantom = (o, dt) => {
+  o.x -= (speed + o.run) * dt;
+  o.runPhase += dt * (o.run + 250) / 24;
+  o.t += dt;
+  // A ghost that's inside you waits until it has passed before turning solid,
+  // so it can never appear on top of you with no way out
+  const inside = o.x < player.x + player.w && o.x + o.w > player.x;
+  if (!o.solid && inside && (o.t % PHANTOM_CYCLE) < PHANTOM_CYCLE / 2) o.t -= dt * 2;
+  const ph = o.t % PHANTOM_CYCLE;
+  o.solid = ph < PHANTOM_CYCLE / 2;
+  o.flicker = (ph > 0.72 && ph < 0.9) || ph > 1.62;
+};
+SLASH.phantom = (o) => { if (o.solid) killEnemy(o, randInt(3, 5)); };
+
+// Boss: the Warlord arrives with every 4th wave. While he's here nothing else spawns.
+// He slams (a shockwave to jump), lobs bombs, or calls runners; after two attacks he
+// steps up to you, and that's when you can hit him. Watch for his sweep.
+function spawnBoss() {
+  const n = Math.floor(wave / 4);
+  const hp = 10 + 5 * n;
+  obstacles.push(person({ type: "boss", look: "brute", scale: 2.1, x: W + 80, y: GROUND_Y - 126,
+    w: 55, h: 126, hp, maxHp: hp, state: "enter", timer: 0, next: 0, rounds: 0, last: "",
+    sweep: 0, sweepWarn: false, warn: false, hold: false, vulnerable: false, flash: 0 }));
+  bossBanner = { title: "BOSS", sub: "THE WARLORD", t: 2.4 };
+  sfx.boss();
+}
+function spawnShock(x) { obstacles.push({ type: "shock", x, y: GROUND_Y - 30, w: 28, h: 30 }); }
+MOVERS.shock = (o, dt) => { o.x -= (speed + 300) * dt; };
+function pushRunner(x, run) {
+  obstacles.push(person({ type: "enemy", x, y: GROUND_Y - player.standH, w: player.w, h: player.standH, run, shield: false }));
+}
+MOVERS.boss = (o, dt) => {
+  o.runPhase += dt * speed / 30;
+  o.flash = Math.max(0, o.flash - dt);
+  o.sweep = Math.max(0, o.sweep - dt);
+  if (!o.hold) o.attack = Math.max(0, o.attack - dt);
+  const raise = () => { o.attack = ATTACK_DURATION; o.hold = true; o.warn = true; sfx.warn(); };
+  const lower = () => { o.hold = false; o.warn = false; };
+  switch (o.state) {
+    case "enter":
+      o.x -= (speed + 80) * dt;
+      if (o.x <= BOSS_X) { o.x = BOSS_X; setState(o, "choose"); }
+      break;
+    case "choose":
+      o.timer += dt;
+      if (o.timer >= 0.9) {
+        if (o.rounds >= 2) { o.rounds = 0; setState(o, "advance"); break; }
+        o.rounds++;
+        const options = ["slam", "bombs", "summon"].filter((s) => s !== o.last);
+        o.last = options[Math.floor(Math.random() * options.length)];
+        setState(o, o.last);
+      }
+      break;
+    case "slam":
+      if (timeline(o, dt, [[0, raise], [0.75, () => {
+        lower(); spawnShock(o.x - 10); sfx.slam(); shakeTime = Math.max(shakeTime, 0.25);
+      }]], 1.5)) setState(o, "choose");
+      break;
+    case "bombs":
+      if (timeline(o, dt, [
+        [0, raise], [0.6, () => { lower(); throwBomb(o.x - 6, o.y + 40); }],
+        [1.2, raise], [1.8, () => { lower(); throwBomb(o.x - 6, o.y + 40); }]], 2.6)) setState(o, "choose");
+      break;
+    case "summon":
+      if (timeline(o, dt, [[0, raise], [0.7, () => {
+        lower(); pushRunner(o.x - 10, 150); pushRunner(o.x + 50, 190); sfx.screech();
+      }]], 1.8)) setState(o, "choose");
+      break;
+    case "advance":
+      o.x -= 320 * dt;
+      if (o.x <= BOSS_FIGHT_X) { o.x = BOSS_FIGHT_X; o.vulnerable = true; setState(o, "expose"); }
+      break;
+    case "expose":
+      if (timeline(o, dt, [
+        [1.0, () => { raise(); o.sweepWarn = true; }],
+        [1.6, () => { lower(); o.sweepWarn = false; o.sweep = 0.25; sfx.slam(); shakeTime = Math.max(shakeTime, 0.2); }]], 3.4)) {
+        o.vulnerable = false; setState(o, "retreat");
+      }
+      break;
+    case "retreat":
+      o.x += 340 * dt;
+      if (o.x >= BOSS_X) { o.x = BOSS_X; setState(o, "choose"); }
+      break;
+  }
+};
+SLASH.boss = (o) => {
+  if (!o.vulnerable || o.hitSwing === player.swingId) return;
+  o.hitSwing = player.swingId;
+  o.hp--;
+  o.flash = 0.15;
+  shakeTime = Math.max(shakeTime, 0.08);
+  burst(o.x + 10, o.y + o.h * 0.5, 8, "#ff6a6a", 260);
+  popups.push({ x: o.x + o.w / 2, y: o.y - 10, t: 0, text: "-1" });
+  sfx.clang();
+  if (o.hp <= 0) {
+    bonusScore += 100;
+    bossBanner = { title: "BOSS DEFEATED", sub: "+100", t: 2.6 };
+    sfx.wave();
+    killEnemy(o, 40);
+  }
+};
+
+// Ordinary enemies keep their old behaviour (shields block the sword)
+SLASH.enemy = (o) => {
+  if (!o.shield) return killEnemy(o);
+  if (o.blockedSwing === player.swingId) return;
+  o.blockedSwing = player.swingId;
+  o.x += 30;
+  o.stagger = 0.3;
+  popups.push({ x: o.x + o.w / 2, y: o.y - 8, t: 0, text: "BLOCKED" });
+  sfx.clang();
+};
+
 // --- Update ---
 function update(dt) {
   const diff = DIFFICULTIES[runDiff];
@@ -1029,9 +1418,11 @@ function update(dt) {
   score = Math.floor(distance / 40) + bonusScore;
 
   if (waveAt(score) > wave) {
+    const before = wave;
     wave = waveAt(score);
     waveBanner = 2;
     sfx.wave();
+    if (Math.floor(wave / 4) > Math.floor(before / 4)) spawnBoss();
   }
 
   if (Math.floor(score / 100) > lastMilestone) {
@@ -1066,13 +1457,15 @@ function update(dt) {
   // Spawn obstacles — gap shrinks as speed rises, and the random extra
   // breathing room shrinks each wave so obstacles come steadily closer together
   spawnTimer -= dt;
+  if (obstacles.some((o) => o.type === "boss")) spawnTimer = Math.max(spawnTimer, 0.8);  // a boss fight is a duel
   if (spawnTimer <= 0) {
-    spawnObstacle();
+    const extra = spawnObstacle();
     const minGap = 0.6 + 260 / speed;
-    spawnTimer = minGap + Math.random() * (0.9 - 0.6 * waveIntensity());
+    spawnTimer = minGap + Math.random() * (0.9 - 0.6 * waveIntensity()) + extra;
   }
 
   for (const o of obstacles) {
+    if (MOVERS[o.type]) { MOVERS[o.type](o, dt); continue; }
     if (o.type === "drone") {
       o.x -= speed * o.mul * dt;
       o.spin += dt;
@@ -1100,23 +1493,18 @@ function update(dt) {
       }
     }
   }
-  obstacles = obstacles.filter((o) => o.x + o.w > -50);
+  obstacles = obstacles.filter((o) => o.x + o.w > -50 && !o.gone);
 
-  // The sword hits anything in a box just in front of the player while
-  // swinging, but only from the ground. Shields block it once per swing and
-  // knock the enemy back a little.
+  // The sword hits anything in a box just in front of the player while swinging, but
+  // only from the ground. What happens to each kind is in SLASH (shields block it, a
+  // brute takes three hits, a ghost passes through, a chest opens...).
   if (player.attack > 0 && player.onGround) {
     const left = player.x + player.w - 6, right = player.x + player.w + 46;
     const top = player.y - 30;
     for (const o of obstacles) {
-      if (o.type !== "enemy" || !(o.x < right && o.x + o.w > left && o.y + o.h > top)) continue;
-      if (!o.shield) { killEnemy(o); continue; }
-      if (o.blockedSwing === player.swingId) continue;
-      o.blockedSwing = player.swingId;
-      o.x += 30;
-      o.stagger = 0.3;
-      popups.push({ x: o.x + o.w / 2, y: o.y - 8, t: 0, text: "BLOCKED" });
-      sfx.clang();
+      const slash = SLASH[o.type];
+      if (!slash || o.dead || o.gone) continue;
+      if (o.x < right && o.x + o.w > left && o.y + o.h > top) slash(o);
     }
     obstacles = obstacles.filter((o) => !o.dead);
   }
@@ -1124,7 +1512,7 @@ function update(dt) {
   // Jumping over an enemy or drone is worth a bonus: it counts if his feet were
   // above it at some point while it passed under him
   for (const o of obstacles) {
-    if (o.type !== "enemy" && o.type !== "drone") continue;
+    if (!BONUS_JUMP.has(o.type)) continue;
     const under = o.x < player.x + player.w && o.x + o.w > player.x;
     if (under && player.y + player.h <= o.y + 4) o.jumpedOver = true;
     if (o.jumpedOver && !o.bonusGiven && o.x + o.w < player.x) {
@@ -1136,6 +1524,13 @@ function update(dt) {
   }
   for (const p of popups) { p.t += dt; p.y -= 40 * dt; }
   popups = popups.filter((p) => p.t < (p.life || 0.8));
+  for (const p of sparks) {
+    p.t += dt;
+    p.vy += 900 * dt;
+    p.x += (p.vx - speed) * dt;
+    p.y += p.vy * dt;
+  }
+  sparks = sparks.filter((p) => p.t < p.life);
 
   updateCoins(dt);
   // Slain enemies stay where they fell, so they scroll away with the ground
@@ -1167,15 +1562,34 @@ function update(dt) {
 
 // Does obstacle o touch the (already shrunk) player box?
 function hitsPlayer(o, px, py, pw, ph) {
-  if (o.type === "spikeball") {
-    // Circle against box: nearest point of the box to the ball's centre
-    const b = spikeBallPos(o);
-    const nx = Math.max(px, Math.min(b.x, px + pw)), ny = Math.max(py, Math.min(b.y, py + ph));
-    return Math.hypot(b.x - nx, b.y - ny) < BALL_R - 1;
-  }
-  if (o.type === "laser") {
-    // Only the beam hurts, and only while it's on; the posts are scenery
-    return laserOn(o) && px < o.x + o.w - 2 && px + pw > o.x + 2 && py < o.y + o.h && py + ph > o.y;
+  const overlap = (x0, y0, x1, y1) => px < x1 && px + pw > x0 && py < y1 && py + ph > y0;
+  switch (o.type) {
+    case "spikeball": {
+      // Circle against box: nearest point of the box to the ball's centre
+      const b = spikeBallPos(o);
+      const nx = Math.max(px, Math.min(b.x, px + pw)), ny = Math.max(py, Math.min(b.y, py + ph));
+      return Math.hypot(b.x - nx, b.y - ny) < BALL_R - 1;
+    }
+    case "laser":
+      // Only the beam hurts, and only while it's on; the posts are scenery
+      return laserOn(o) && px < o.x + o.w - 2 && px + pw > o.x + 2 && py < o.y + o.h && py + ph > o.y;
+    // These never touch you themselves: archers and bombers keep their distance, and
+    // bombs and chests are harmless (arrows and the blast do the damage)
+    case "archer": case "bomber": case "bomb": case "chest":
+      return false;
+    case "arrow":
+      return overlap(o.x, o.y, o.x + o.w, o.y + o.h);
+    case "blast": {
+      const r = o.r * Math.min(1, 0.4 + o.t / 0.1);
+      const nx = Math.max(px, Math.min(o.x, px + pw)), ny = Math.max(py, Math.min(GROUND_Y, py + ph));
+      return Math.hypot(o.x - nx, GROUND_Y - ny) < r;
+    }
+    case "phantom":
+      if (!o.solid) return false;   // a ghost passes straight through
+      break;
+    case "boss":
+      if (o.sweep > 0 && overlap(o.x - 62, GROUND_Y - 32, o.x + 4, GROUND_Y)) return true;
+      break;
   }
   return px < o.x + o.w - 4 && px + pw > o.x + 4 && py < o.y + o.h - 4 && py + ph > o.y + 4;
 }
@@ -1201,27 +1615,22 @@ function drawGoldPopup(p) {
   ctx.restore();
 }
 
-function killEnemy(o) {
+function killEnemy(o, gold = 1 + Math.floor(Math.random() * 3)) {
   o.dead = true;
-  shakeTime = Math.max(shakeTime, 0.1);
+  const heavy = o.scale ? 0.6 : 1;   // big ones don't fly as far
+  shakeTime = Math.max(shakeTime, o.scale ? 0.25 : 0.1);
   sfx.kill();
   // He's flung away from the sword, upper body first
-  corpses.push(makeRagdoll(enemyPose(o), (name) => {
+  const corpse = makeRagdoll(enemyPose(o), (name) => {
     const upper = UPPER_BODY.has(name);
-    return [(upper ? 300 : 170) + Math.random() * 80, upper ? -380 : -180];
-  }));
-  const count = 1 + Math.floor(Math.random() * 3);
+    return [((upper ? 300 : 170) + Math.random() * 80) * heavy, (upper ? -380 : -180) * heavy];
+  });
+  corpse.look = o.look;     // so a ninja or brute still looks like one when he's down
+  corpse.type = o.type;
+  corpse.scale = o.scale;
+  corpses.push(corpse);
   // Show how much gold he dropped, floating up from where he fell
-  popups.push({ x: o.x + o.w / 2, y: o.y - 6, t: 0, text: "+" + count, gold: true, life: 1.1 });
-  for (let i = 0; i < count; i++) {
-    coins.push({
-      x: o.x + o.w / 2,
-      y: o.y + 20,
-      vx: 40 + Math.random() * 160,   // relative to the ground
-      vy: -300 - Math.random() * 220,
-      spin: Math.random() * 6
-    });
-  }
+  dropGold(o.x + o.w / 2, o.y + 20, gold, o.y - 6);
 }
 
 function updateCoins(dt) {
@@ -1291,8 +1700,8 @@ function crash(obstacle) {
   const pose = getPose();
   // An enemy, the spike ball, or anything flying/beaming at the upper body
   // knocks him backwards; things on the ground trip him forwards
-  const knockBack = obstacle.type === "enemy" || obstacle.type === "spikeball" ||
-    ((obstacle.type === "drone" || obstacle.type === "laser") && obstacle.y + obstacle.h / 2 < pose.hip.y);
+  const knockBack = ["enemy", "ninja", "brute", "phantom", "boss", "spikeball"].includes(obstacle.type) ||
+    (["drone", "laser", "bat", "arrow"].includes(obstacle.type) && obstacle.y + obstacle.h / 2 < pose.hip.y);
   ragdoll = makeRagdoll(pose, (name) => {
     const upper = UPPER_BODY.has(name);
     let vx = knockBack ? (upper ? -0.45 : 0.25) * speed : (upper ? 0.6 : 0.3) * speed;
@@ -1397,11 +1806,13 @@ function rockBounds(o, r) {
 // Day/night cycle: every 1000 points it fades to night around 700 and back by 1000
 const DAY = {
   sky: [247, 247, 247], ink: [83, 83, 83], inkBack: [163, 163, 163], cloud: [224, 224, 224],
-  enemy: [45, 28, 28], enemyBack: [150, 112, 112], blade: [120, 136, 152]
+  enemy: [45, 28, 28], enemyBack: [150, 112, 112], blade: [120, 136, 152],
+  ninja: [28, 36, 64], ninjaBack: [112, 122, 150], ghost: [120, 150, 205], ghostBack: [170, 190, 225]
 };
 const NIGHT = {
   sky: [32, 35, 42], ink: [214, 214, 214], inkBack: [118, 118, 118], cloud: [58, 62, 72],
-  enemy: [232, 190, 190], enemyBack: [128, 96, 96], blade: [196, 212, 228]
+  enemy: [232, 190, 190], enemyBack: [128, 96, 96], blade: [196, 212, 228],
+  ninja: [160, 180, 235], ninjaBack: [100, 115, 155], ghost: [190, 220, 255], ghostBack: [120, 150, 190]
 };
 const EYE_RED = "#ff2020";
 const SHIELD_METAL = "#8b97a3";
@@ -1507,16 +1918,44 @@ function getPose(p = player) {
   return pose;
 }
 
-// Enemies run towards the player, so their pose is mirrored to face left
+// Archers and bombers hold their arms differently from a runner (drawn facing right here;
+// enemyPose mirrors the result)
+function shooterArms(pose, o) {
+  const s = pose.shoulder;
+  if (o.type === "archer") {
+    const pull = o.draw || 0;   // 0 = string at rest, 1 = fully drawn
+    pose.elbowF = { x: s.x + 9, y: s.y + 2 };
+    pose.handF = { x: s.x + 19, y: s.y + 2 };
+    pose.elbowB = { x: s.x + 8 - 5 * pull, y: s.y + 5 };
+    pose.handB = { x: s.x + 16 - 15 * pull, y: s.y + 2 };
+  } else if (o.windup > 0) {
+    pose.elbowF = { x: s.x + 2, y: s.y - 10 };
+    pose.handF = { x: s.x + 5, y: s.y - 22 };
+  } else {
+    pose.elbowF = { x: s.x + 6, y: s.y + 8 };
+    pose.handF = { x: s.x + 12, y: s.y + 6 };
+  }
+}
+
+// Enemies run towards the player, so their pose is mirrored to face left.
+// Big ones (o.scale) are scaled up from their feet.
 function enemyPose(o) {
   const pose = getPose(o);
+  if (o.type === "archer" || o.type === "bomber") shooterArms(pose, o);
   const cx = o.x + o.w / 2;
   for (const pt of Object.values(pose)) pt.x = 2 * cx - pt.x;
+  if (o.scale) {
+    const base = o.y + o.h;
+    for (const pt of Object.values(pose)) {
+      pt.x = cx + (pt.x - cx) * o.scale;
+      pt.y = base + (pt.y - base) * o.scale;
+    }
+  }
   return pose;
 }
 
-function drawFigure(pts, ink = colors.ink, inkBack = colors.inkBack) {
-  ctx.lineWidth = 4;
+function drawFigure(pts, ink = colors.ink, inkBack = colors.inkBack, width = 4, headR = BODY.headR) {
+  ctx.lineWidth = width;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
@@ -1537,7 +1976,7 @@ function drawFigure(pts, ink = colors.ink, inkBack = colors.inkBack) {
 
   ctx.fillStyle = ink;
   ctx.beginPath();
-  ctx.arc(pts.head.x, pts.head.y, BODY.headR, 0, Math.PI * 2);
+  ctx.arc(pts.head.x, pts.head.y, headR, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -1815,8 +2254,42 @@ function drawStickman() {
   drawSword(pts, !ragdoll && player.attack > 0);
 }
 
-function drawEnemy(pts, alive, shield) {
-  drawFigure(pts, colors.enemy, colors.enemyBack);
+// The bow an archer holds out in front of him (he faces left); the string pulls back as he aims
+function drawBow(pts, o) {
+  const hand = pts.handF, pull = o.draw || 0;
+  const cx = hand.x + 17, r = 17, a = Math.PI - 1.0;
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#8a5a24";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(cx, hand.y, r, a, Math.PI + 1.0); ctx.stroke();
+  const ends = [{ x: cx + r * Math.cos(a), y: hand.y + r * Math.sin(a) },
+                { x: cx + r * Math.cos(a), y: hand.y - r * Math.sin(a) }];
+  ctx.strokeStyle = colors.ink;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(ends[0].x, ends[0].y);
+  if (pull > 0.05) ctx.lineTo(pts.handB.x, pts.handB.y);
+  ctx.lineTo(ends[1].x, ends[1].y);
+  ctx.stroke();
+  if (pull > 0.05) {   // the arrow, nocked and ready
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(pts.handB.x, pts.handB.y); ctx.lineTo(hand.x - 14, hand.y); ctx.stroke();
+    ctx.fillStyle = colors.ink;
+    ctx.beginPath();
+    ctx.moveTo(hand.x - 19, hand.y); ctx.lineTo(hand.x - 12, hand.y - 3); ctx.lineTo(hand.x - 12, hand.y + 3);
+    ctx.fill();
+  }
+}
+
+function drawEnemy(pts, alive, shield, o = {}) {
+  const look = o.look, k = o.scale || 1;
+  const t = performance.now() / 1000;
+  let ink = colors.enemy, inkBack = colors.enemyBack;
+  if (look === "ninja") { ink = colors.ninja; inkBack = colors.ninjaBack; }
+  else if (look === "phantom") { ink = colors.ghost; inkBack = colors.ghostBack; }
+  if (o.flash > 0) ink = "#ff6a6a";   // a boss that's just been hit
+  drawFigure(pts, ink, inkBack, 4 * (1 + (k - 1) * 0.6), BODY.headR * k);
+
   if (shield) {
     // Round shield held out in front (he faces left), seen side-on
     const sx = pts.hip.x - 11, sy = pts.shoulder.y + 13;
@@ -1827,22 +2300,78 @@ function drawEnemy(pts, alive, shield) {
     ctx.fillStyle = colors.enemy;
     ctx.beginPath(); ctx.arc(sx - 1, sy, 2, 0, Math.PI * 2); ctx.fill();
   }
-  const h = pts.head;
-  // Angry brows slanting down towards the middle, over glowing red eyes
+
+  const h = pts.head, f = (v) => v * k;
+  if (look === "brute") {   // a spiked club in his fist
+    const hd = pts.handF;
+    ctx.strokeStyle = "#6a4a28";
+    ctx.lineWidth = 3.5 * k * 0.7;
+    line(hd.x, hd.y, hd.x - f(7), hd.y - f(19));
+    ctx.fillStyle = "#6a4a28";
+    ctx.beginPath(); ctx.arc(hd.x - f(8), hd.y - f(21), f(4.2), 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = SHIELD_METAL;
+    for (const [dx, dy] of [[-4, -5], [4, -5], [0, -8]]) {
+      ctx.beginPath(); ctx.arc(hd.x - f(8) + f(dx), hd.y - f(21) + f(dy), f(1.3), 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  if (o.type === "boss") {   // horns
+    ctx.fillStyle = "#e8e0c8";
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(h.x + s * f(4), h.y - f(6));
+      ctx.lineTo(h.x + s * f(11), h.y - f(15));
+      ctx.lineTo(h.x + s * f(9), h.y - f(3));
+      ctx.fill();
+    }
+  }
+  if (look === "archer") {
+    drawBow(pts, o);
+    ctx.fillStyle = "#3f7d3a";   // a feathered cap
+    ctx.beginPath(); ctx.moveTo(h.x - 8, h.y - 4); ctx.lineTo(h.x + 4, h.y - 17); ctx.lineTo(h.x + 8, h.y - 3); ctx.fill();
+  }
+  if (look === "bomber") {
+    ctx.strokeStyle = "#b8862b";   // bandolier
+    ctx.lineWidth = 2;
+    line(pts.shoulder.x - 4, pts.shoulder.y + 1, pts.hip.x + 4, pts.hip.y - 3);
+    if (o.holding) {
+      const b = { x: pts.handF.x - 2, y: pts.handF.y - 7 };
+      ctx.fillStyle = "#222";
+      ctx.beginPath(); ctx.arc(b.x, b.y, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#888"; ctx.lineWidth = 1.2;
+      line(b.x + 2, b.y - 5, b.x + 5, b.y - 10);
+      if (Math.sin(t * 40) > 0) { ctx.fillStyle = "#ffb02e"; ctx.beginPath(); ctx.arc(b.x + 5, b.y - 10, 1.8, 0, Math.PI * 2); ctx.fill(); }
+    }
+  }
+  if (look === "ninja") {   // red headband with fluttering tails
+    ctx.strokeStyle = "#e02020";
+    ctx.lineWidth = 2.4;
+    line(h.x - 8, h.y - 2.5, h.x + 8, h.y - 2.5);
+    ctx.lineWidth = 1.8;
+    for (const s of [0, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(h.x + 7, h.y - 2.5);
+      ctx.quadraticCurveTo(h.x + 15, h.y - 5 + s * 5 + Math.sin(t * 14 + s * 2) * 3, h.x + 24, h.y - 2 + s * 7 + Math.sin(t * 14 + s) * 4);
+      ctx.stroke();
+    }
+  }
+
+  const eye = look === "phantom" ? "#7fe9ff" : EYE_RED;
+  const face = look === "phantom" ? "#1a2440" : colors.sky;
+  // Angry brows slanting down towards the middle, over glowing eyes
   // (he faces left, so the face is on the left of the head)
-  ctx.strokeStyle = colors.sky;
-  ctx.lineWidth = 1.6;
-  line(h.x - 7.5, h.y - 5.5, h.x - 3.5, h.y - 2.8);
-  line(h.x + 2, h.y - 5.5, h.x - 1.5, h.y - 2.8);
-  ctx.fillStyle = EYE_RED;
-  if (alive) { ctx.shadowColor = EYE_RED; ctx.shadowBlur = 6; }
-  ctx.beginPath(); ctx.arc(h.x - 4.8, h.y - 0.8, 1.8, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(h.x - 0.2, h.y - 0.8, 1.8, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = face;
+  ctx.lineWidth = 1.6 + (k - 1);
+  line(h.x - f(7.5), h.y - f(5.5), h.x - f(3.5), h.y - f(2.8));
+  line(h.x + f(2), h.y - f(5.5), h.x - f(1.5), h.y - f(2.8));
+  ctx.fillStyle = eye;
+  if (alive) { ctx.shadowColor = eye; ctx.shadowBlur = 6; }
+  ctx.beginPath(); ctx.arc(h.x - f(4.8), h.y - f(0.8), f(1.8), 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(h.x - f(0.2), h.y - f(0.8), f(1.8), 0, Math.PI * 2); ctx.fill();
   ctx.shadowBlur = 0;
   // Snarl
-  ctx.strokeStyle = colors.sky;
-  ctx.lineWidth = 1.2;
-  line(h.x - 5, h.y + 4, h.x - 1.5, h.y + 3.2);
+  ctx.strokeStyle = face;
+  ctx.lineWidth = 1.2 + (k - 1) * 0.6;
+  line(h.x - f(5), h.y + f(4), h.x - f(1.5), h.y + f(3.2));
 }
 
 function drawCoin(c) {
@@ -1854,9 +2383,199 @@ function drawCoin(c) {
   ctx.beginPath(); ctx.ellipse(c.x, c.y, w, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 }
 
+// Pictures for the newer obstacles; drawObstacle hands these off before its own chain
+const OBSTACLE_DRAW = {
+  chest(o) {
+    const { x, y, w, h } = o, t = performance.now() / 1000;
+    const wood = "#8a5a24";
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = colors.ink;
+    if (o.open) {   // a warm glow, then the lid thrown back over a heap of gold
+      const glow = Math.max(0, 1 - o.openT / 0.8);
+      if (glow > 0) {
+        ctx.fillStyle = `rgba(255, 211, 77, ${0.4 * glow})`;
+        ctx.beginPath(); ctx.arc(x + w / 2, y + 8, 30, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.fillStyle = wood;
+    ctx.fillRect(x, y + 10, w, h - 10);
+    ctx.strokeRect(x, y + 10, w, h - 10);
+    ctx.fillStyle = GOLD;
+    for (const bx of [x + 5, x + w - 9]) ctx.fillRect(bx, y + 10, 4, h - 10);
+    if (!o.open) {
+      ctx.fillStyle = wood;
+      ctx.beginPath(); ctx.moveTo(x, y + 10); ctx.quadraticCurveTo(x + w / 2, y - 7, x + w, y + 10); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = GOLD;
+      for (const bx of [x + 5, x + w - 9]) ctx.fillRect(bx, y + 3, 4, 7);
+      ctx.fillRect(x + w / 2 - 3, y + 8, 6, 8);
+      const g = 0.5 + 0.5 * Math.sin(t * 5);   // a glint, so it catches the eye
+      ctx.strokeStyle = `rgba(255, 255, 255, ${g})`;
+      ctx.lineWidth = 1.5;
+      line(x + w - 6, y - 4, x + w - 6, y + 2); line(x + w - 9, y - 1, x + w - 3, y - 1);
+    } else {
+      ctx.fillStyle = GOLD;
+      ctx.beginPath(); ctx.ellipse(x + w / 2, y + 10, w / 2 - 3, 5, 0, Math.PI, Math.PI * 2); ctx.fill();
+      ctx.save();
+      ctx.translate(x + w - 2, y + 10);
+      ctx.rotate(1.9 * Math.min(1, o.openT / 0.2));
+      ctx.fillStyle = wood;
+      ctx.strokeStyle = colors.ink;
+      ctx.lineWidth = 2;
+      ctx.fillRect(-w + 2, -6, w - 2, 6);
+      ctx.strokeRect(-w + 2, -6, w - 2, 6);
+      ctx.restore();
+    }
+  },
+
+  archer(o) {
+    const pts = enemyPose(o);
+    if (o.warn) {   // red line showing where the arrow will fly
+      const y = arrowY(o.low);
+      ctx.strokeStyle = EYE_RED;
+      ctx.globalAlpha = 0.35 + 0.3 * Math.sin(performance.now() / 40);
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 5]);
+      line(pts.handF.x - 20, y, 0, y);
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = EYE_RED;
+      ctx.font = "bold 22px 'Courier New', monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("!", o.x + o.w / 2, o.y - 12);
+    }
+    drawEnemy(pts, true, false, o);
+  },
+
+  bomber(o) {
+    drawEnemy(enemyPose(o), true, false, o);
+    if (o.windup) {   // about to throw
+      ctx.fillStyle = EYE_RED;
+      ctx.font = "bold 22px 'Courier New', monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("!", o.x + o.w / 2, o.y - 12);
+    }
+  },
+
+  arrow(o) {
+    const y = o.y + 3;
+    ctx.strokeStyle = colors.ink;
+    ctx.fillStyle = colors.ink;
+    ctx.lineWidth = 2;
+    line(o.x + 3, y, o.x + o.w, y);
+    ctx.beginPath(); ctx.moveTo(o.x - 5, y); ctx.lineTo(o.x + 4, y - 3.5); ctx.lineTo(o.x + 4, y + 3.5); ctx.fill();
+    ctx.lineWidth = 1.4;
+    line(o.x + o.w - 7, y, o.x + o.w - 2, y - 3.5); line(o.x + o.w - 7, y, o.x + o.w - 2, y + 3.5);
+  },
+
+  bomb(o) {
+    const cx = o.x + 7, cy = o.y + 7, left = Math.max(0, 1 - o.flight / BOMB_FLIGHT);
+    // Landing ring: shrinks to the size of the blast as the bomb comes down
+    ctx.strokeStyle = EYE_RED;
+    ctx.globalAlpha = 0.6;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(o.targetX, GROUND_Y - 1, BLAST_R + 26 * left, 5 + 3 * left, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#222";
+    ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#888"; ctx.lineWidth = 1.5;
+    line(cx + 3, cy - 6, cx + 6, cy - 11);
+    if (Math.sin(o.spin * 4) > 0) { ctx.fillStyle = "#ffb02e"; ctx.beginPath(); ctx.arc(cx + 6, cy - 11, 2.2, 0, Math.PI * 2); ctx.fill(); }
+  },
+
+  blast(o) {
+    const r = o.r * Math.min(1, 0.4 + o.t / 0.1);
+    ctx.globalAlpha = Math.min(1, (1 - o.t / o.life) * 1.6);
+    for (const [color, k] of [["#ff7a1a", 1], ["#ffd23f", 0.62], ["#fff6c8", 0.3]]) {
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(o.x, GROUND_Y, r * k, Math.PI, Math.PI * 2); ctx.closePath(); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  },
+
+  bat(o) {
+    const cx = o.x + 15, cy = o.y + 9;
+    const flap = Math.sin(o.t * (o.state === "dive" ? 30 : 18));
+    ctx.fillStyle = colors.enemy;
+    for (const s of [-1, 1]) {   // wings
+      ctx.beginPath();
+      ctx.moveTo(cx + s * 3, cy - 2);
+      ctx.lineTo(cx + s * 21, cy - 9 - 7 * flap);
+      ctx.lineTo(cx + s * 16, cy + 1 - 3 * flap);
+      ctx.lineTo(cx + s * 11, cy + 4 - 2 * flap);
+      ctx.lineTo(cx + s * 6, cy + 4);
+      ctx.fill();
+    }
+    ctx.beginPath(); ctx.ellipse(cx, cy, 8, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(cx - 7, cy - 4); ctx.lineTo(cx - 4, cy - 11); ctx.lineTo(cx - 1, cy - 5); ctx.fill();   // ears
+    ctx.beginPath(); ctx.moveTo(cx + 1, cy - 5); ctx.lineTo(cx + 4, cy - 11); ctx.lineTo(cx + 7, cy - 4); ctx.fill();
+    const angry = o.state === "hover" || o.state === "dive";
+    ctx.fillStyle = EYE_RED;
+    if (angry) { ctx.shadowColor = EYE_RED; ctx.shadowBlur = 8; }
+    ctx.beginPath(); ctx.arc(cx - 4.5, cy - 1, 1.7, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx - 0.5, cy - 1, 1.7, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+  },
+
+  phantom(o) {
+    ctx.globalAlpha = o.flicker ? (Math.sin(o.t * 70) > 0 ? 0.85 : 0.25) : (o.solid ? 0.95 : 0.2);
+    drawEnemy(enemyPose(o), o.solid, false, o);
+    ctx.globalAlpha = 1;
+  },
+
+  ninja(o) {
+    if (o.state === "dash") {   // afterimages streaming behind the leap
+      for (const [off, a] of [[34, 0.12], [20, 0.25]]) {
+        ctx.globalAlpha = a;
+        drawEnemy(enemyPose({ ...o, x: o.x + off }), false, false, o);
+      }
+      ctx.globalAlpha = 1;
+    }
+    drawEnemy(enemyPose(o), true, false, o);
+    if (o.state === "hold" && Math.sin(o.timer * 50) > 0) {   // about to leap
+      ctx.fillStyle = EYE_RED;
+      ctx.font = "bold 22px 'Courier New', monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("!", o.x + o.w / 2, o.y - 12);
+    }
+  },
+
+  brute(o) {
+    drawEnemy(enemyPose(o), true, false, o);
+    // Hits left, as pips over his head
+    for (let i = 0; i < o.maxHp; i++) {
+      ctx.fillStyle = i < o.hp ? EYE_RED : colors.inkBack;
+      ctx.beginPath(); ctx.arc(o.x + o.w / 2 + (i - (o.maxHp - 1) / 2) * 10, o.y - 14, 3.2, 0, Math.PI * 2); ctx.fill();
+    }
+  },
+
+  shock(o) {
+    ctx.fillStyle = colors.ink;
+    ctx.beginPath();
+    ctx.moveTo(o.x, GROUND_Y);
+    for (const [dx, dy] of [[3, 12], [8, 8], [14, 30], [19, 11], [23, 16], [28, 0]]) ctx.lineTo(o.x + dx, GROUND_Y - dy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = colors.inkBack;   // dust kicked up behind it
+    for (let i = 0; i < 4; i++) ctx.fillRect(o.x + 32 + i * 9, GROUND_Y - 3 - i * 2, 3, 3);
+  },
+
+  boss(o) {
+    if (o.sweepWarn || o.sweep > 0) {   // the zone his club will sweep
+      ctx.fillStyle = EYE_RED;
+      ctx.globalAlpha = o.sweep > 0 ? 0.55 : 0.18 + 0.15 * Math.sin(performance.now() / 50);
+      ctx.fillRect(o.x - 62, GROUND_Y - 32, 66, 32);
+      ctx.globalAlpha = 1;
+    }
+    drawEnemy(enemyPose(o), true, false, o);
+  }
+};
+
 function drawObstacle(o) {
   ctx.fillStyle = colors.ink;
   ctx.strokeStyle = colors.ink;
+  const custom = OBSTACLE_DRAW[o.type];
+  if (custom) { custom(o); return; }
   if (o.type === "rock") {
     const each = (o.w - 4) / o.count;
     for (let i = 0; i < o.count; i++) {
@@ -2027,9 +2746,15 @@ function draw() {
   ctx.fillStyle = colors.ink;
   for (const g of groundBits) ctx.fillRect(g.x, g.y, g.w, 2);
 
-  for (const c of corpses) drawEnemy(c.points, false);
+  for (const c of corpses) drawEnemy(c.points, false, false, c);
   obstacles.forEach(drawObstacle);
   coins.forEach(drawCoin);
+  for (const p of sparks) {
+    ctx.globalAlpha = Math.max(0, 1 - p.t / p.life);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.r / 2, p.y - p.r / 2, p.r, p.r);
+  }
+  ctx.globalAlpha = 1;
   drawStickman();
   ctx.fillStyle = colors.ink;
   ctx.font = "bold 16px 'Courier New', monospace";
@@ -2068,6 +2793,32 @@ function draw() {
     ctx.globalAlpha = 1;
   }
 
+  // Boss health bar, and a big banner when a boss arrives or falls
+  const boss = obstacles.find((o) => o.type === "boss");
+  if (boss) {
+    ctx.fillStyle = colors.inkBack;
+    ctx.fillRect(W / 2 - 110, 44, 220, 9);
+    ctx.fillStyle = EYE_RED;
+    ctx.fillRect(W / 2 - 110, 44, 220 * Math.max(0, boss.hp) / boss.maxHp, 9);
+    ctx.strokeStyle = colors.ink;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(W / 2 - 110, 44, 220, 9);
+    ctx.fillStyle = colors.ink;
+    ctx.font = "bold 12px 'Courier New', monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(boss.vulnerable ? "THE WARLORD - HIT HIM!" : "THE WARLORD", W / 2, 68);
+  }
+  if (bossBanner) {
+    ctx.globalAlpha = Math.min(1, bossBanner.t / 0.5);
+    ctx.fillStyle = colors.ink;
+    ctx.textAlign = "center";
+    ctx.font = "bold 34px 'Courier New', monospace";
+    ctx.fillText(bossBanner.title, W / 2, 175);
+    ctx.font = "bold 16px 'Courier New', monospace";
+    ctx.fillText(bossBanner.sub, W / 2, 198);
+    ctx.globalAlpha = 1;
+  }
+
   // Score (the current score blinks for a moment every 100 points)
   ctx.fillStyle = colors.ink;
   ctx.font = "bold 20px 'Courier New', monospace";
@@ -2092,6 +2843,7 @@ function loop(time) {
   if (shakeTime > 0) shakeTime -= dt;
   if (flashTime > 0) flashTime -= dt;
   if (waveBanner > 0 && state === "running") waveBanner -= dt;
+  if (bossBanner && state === "running") { bossBanner.t -= dt; if (bossBanner.t <= 0) bossBanner = null; }
   draw();
   requestAnimationFrame(loop);
 }
