@@ -240,6 +240,9 @@ let flashTime = 0;
 let coins = [];              // gold coins dropped by enemies, waiting to be picked up
 let corpses = [];            // ragdolls of slain enemies
 let runGold = 0;
+let bonusScore = 0;          // points from jumping over enemies and drones
+let popups = [];             // floating "+10" texts
+const JUMP_OVER_BONUS = 10;
 
 const player = {
   x: 80,
@@ -275,6 +278,8 @@ function reset() {
   coins = [];
   corpses = [];
   runGold = 0;
+  bonusScore = 0;
+  popups = [];
   ragdoll = null;
   shakeTime = 0;
   clouds = Array.from({ length: 4 }, () => ({
@@ -446,6 +451,7 @@ const sfx = {
   hit: () => beep(240, 0.4, { type: "sawtooth", vol: 0.08, slideTo: 50 }),
   slash: () => beep(1400, 0.09, { type: "triangle", vol: 0.05, slideTo: 300 }),
   kill: () => beep(180, 0.18, { vol: 0.07, slideTo: 70 }),
+  bonus: () => { beep(660, 0.06, { vol: 0.04 }); beep(990, 0.09, { vol: 0.04, delay: 0.06 }); },
   coin: () => { beep(990, 0.05, { vol: 0.04 }); beep(1480, 0.1, { vol: 0.04, delay: 0.05 }); }
 };
 
@@ -581,7 +587,7 @@ function update(dt) {
   const diff = DIFFICULTIES[runDiff];
   speed = Math.min(diff.max, speed + diff.gain * dt);
   distance += speed * dt;
-  score = Math.floor(distance / 40);
+  score = Math.floor(distance / 40) + bonusScore;
 
   if (Math.floor(score / 100) > lastMilestone) {
     lastMilestone = Math.floor(score / 100);
@@ -641,6 +647,22 @@ function update(dt) {
     }
     obstacles = obstacles.filter((o) => !o.dead);
   }
+
+  // Jumping over an enemy or drone is worth a bonus: it counts if his feet were
+  // above it at some point while it passed under him
+  for (const o of obstacles) {
+    if (o.type !== "enemy" && o.type !== "drone") continue;
+    const under = o.x < player.x + player.w && o.x + o.w > player.x;
+    if (under && player.y + player.h <= o.y + 4) o.jumpedOver = true;
+    if (o.jumpedOver && !o.bonusGiven && o.x + o.w < player.x) {
+      o.bonusGiven = true;
+      bonusScore += JUMP_OVER_BONUS;
+      popups.push({ x: player.x + player.w / 2, y: player.y - 10, t: 0 });
+      sfx.bonus();
+    }
+  }
+  for (const p of popups) { p.t += dt; p.y -= 40 * dt; }
+  popups = popups.filter((p) => p.t < 0.8);
 
   updateCoins(dt);
   // Slain enemies stay where they fell, so they scroll away with the ground
@@ -1176,6 +1198,14 @@ function draw() {
   obstacles.forEach(drawObstacle);
   coins.forEach(drawCoin);
   drawStickman();
+  ctx.fillStyle = colors.ink;
+  ctx.font = "bold 16px 'Courier New', monospace";
+  ctx.textAlign = "center";
+  for (const p of popups) {
+    ctx.globalAlpha = 1 - p.t / 0.8;
+    ctx.fillText(`+${JUMP_OVER_BONUS}`, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
   ctx.restore();
 
   // Gold collected this run, under the score
