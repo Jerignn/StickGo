@@ -331,6 +331,7 @@ const player = {
   runPhase: 0,
   attack: 0,                 // time left in the current sword swing
   attackCooldown: 0,
+  swingId: 0,                // counts swings, so a shield blocks each swing only once
   standH: 60,
   duckH: 36,
   w: 26,
@@ -607,6 +608,8 @@ const sfx = {
   slash: () => beep(1400, 0.09, { type: "triangle", vol: 0.05, slideTo: 300 }),
   kill: () => beep(180, 0.18, { vol: 0.07, slideTo: 70 }),
   bonus: () => { beep(660, 0.06, { vol: 0.04 }); beep(990, 0.09, { vol: 0.04, delay: 0.06 }); },
+  clang: () => { beep(1900, 0.07, { vol: 0.05 }); beep(950, 0.14, { type: "triangle", vol: 0.05, delay: 0.02 }); },
+  laser: () => beep(1200, 0.12, { type: "sawtooth", vol: 0.025, slideTo: 1800 }),
   wave: () => { beep(440, 0.12); beep(554, 0.12, { delay: 0.13 }); beep(659, 0.22, { delay: 0.26 }); },
   coin: () => { beep(990, 0.05, { vol: 0.04 }); beep(1480, 0.1, { vol: 0.04, delay: 0.05 }); }
 };
@@ -629,6 +632,7 @@ function attack() {
   if (state !== "running" || player.attackCooldown > 0 || !player.onGround) return;
   player.attack = ATTACK_DURATION;
   player.attackCooldown = ATTACK_DURATION + ATTACK_COOLDOWN;
+  player.swingId++;
   sfx.slash();
 }
 
@@ -717,57 +721,137 @@ function arrivalX(objSpeed) {
 }
 
 // --- Obstacles ---
+// Each kind unlocks at a score and has a spawn weight that can grow with the
+// wave (t: 0 in wave 1 .. 1 from MAX_WAVE). Later waves lean towards drones,
+// enemies and the trickier traps rather than plain rocks.
+const SPAWNS = [
+  { from: 0,   weight: () => 22,              make: makeRocks },
+  { from: 60,  weight: () => 12,              make: makeSpikeTrap },
+  { from: 40,  weight: (t) => 20 + 10 * t,    make: makeEnemies },
+  { from: 150, weight: (t) => 8 + 4 * t,      make: makeBarrel },
+  { from: 200, weight: (t) => 25 + 10 * t,    make: makeDrone },
+  { from: 250, weight: (t) => 7 + 3 * t,      make: makeFirePit },
+  { from: 350, weight: (t) => 6 + 3 * t,      make: makeSpikeBall },
+  { from: 450, weight: (t) => 6 + 3 * t,      make: makeLaserGate }
+];
+
 function spawnObstacle() {
   const t = waveIntensity();
-  const roll = Math.random();
-  // Later waves bring more drones and enemies and fewer plain rocks
-  const droneChance = 0.25 + 0.1 * t;
-  const enemyChance = droneChance + 0.2 + 0.1 * t;
-  if (score > 200 && roll < droneChance) {
-    // Flying drone (top of a 22-tall box). Low: skims the ground, must be jumped.
-    // Mid: head height, hits a standing player but clears a ducking one.
-    // High: harmless unless you jump into it. The sword can't hurt drones.
-    // From wave 3 they bob up and down a little (never enough to change
-    // whether you need to jump or duck).
-    const tops = [GROUND_Y - 28, GROUND_Y - 58, GROUND_Y - 109];
-    const y = tops[Math.floor(Math.random() * tops.length)];
-    const mul = 1.1 + 0.2 * t;  // drones fly faster than the ground scrolls, more so each wave
+  const open = SPAWNS.filter((s) => score >= s.from);
+  let roll = Math.random() * open.reduce((sum, s) => sum + s.weight(t), 0);
+  for (const s of open) {
+    roll -= s.weight(t);
+    if (roll <= 0) return s.make(t);
+  }
+  open[open.length - 1].make(t);
+}
+
+// Ground rocks in groups that grow taller and wider each wave
+function makeRocks(t) {
+  const maxCount = score > 400 ? 3 + Math.round(t) : 2;
+  const count = 1 + Math.floor(Math.random() * maxCount);
+  const h = 26 + 12 * t + Math.random() * 24;
+  const w = 18 * count + 4;
+  obstacles.push({ type: "rock", x: W + 20, y: GROUND_Y - h, w, h, count });
+}
+
+// Wooden plank with metal spikes on top: jump it
+function makeSpikeTrap(t) {
+  const w = 40 + Math.random() * 30 + 10 * t;
+  const h = 30 + Math.random() * 12 + 6 * t;
+  obstacles.push({ type: "spikes", x: W + 20, y: GROUND_Y - h, w, h });
+}
+
+// Enemy stickmen charging at the player: slash them or jump over them.
+// They run faster each wave and from wave 3 sometimes come in pairs.
+// From wave 2 some carry a shield that blocks the sword, so they must be jumped.
+function makeEnemies(t) {
+  const pair = wave >= 3 && Math.random() < 0.15 + 0.25 * t;
+  const run = 80 + 120 * t + Math.random() * 80;  // px/s they run towards the player
+  for (let i = 0; i < (pair ? 2 : 1); i++) {
     obstacles.push({
-      type: "drone",
-      x: arrivalX(speed * mul),
-      mul,
-      y, baseY: y,
-      bob: wave >= 3 ? 3 + 5 * t : 0,
-      w: 40,
-      h: 22,
-      spin: Math.random() * 6
+      type: "enemy",
+      x: arrivalX(speed + run) + i * (70 + Math.random() * 25),
+      y: GROUND_Y - player.standH,
+      w: player.w,
+      h: player.standH,
+      run,
+      shield: wave >= 2 && Math.random() < 0.2 + 0.25 * t,
+      runPhase: Math.random() * 6,
+      onGround: true, ducking: false, vy: 0, attack: 0  // fields read by getPose
     });
-  } else if (score > 40 && roll < enemyChance) {
-    // Enemy stickmen charging at the player: slash them or jump over them.
-    // They run faster each wave, and from wave 3 sometimes come in pairs.
-    const pair = wave >= 3 && Math.random() < 0.15 + 0.25 * t;
-    const run = 80 + 120 * t + Math.random() * 80;  // px/s they run towards the player
-    for (let i = 0; i < (pair ? 2 : 1); i++) {
-      obstacles.push({
-        type: "enemy",
-        x: arrivalX(speed + run) + i * (70 + Math.random() * 25),
-        y: GROUND_Y - player.standH,
-        w: player.w,
-        h: player.standH,
-        run,
-        runPhase: Math.random() * 6,
-        onGround: true, ducking: false, vy: 0, attack: 0  // fields read by getPose
-      });
-    }
-  } else {
-    // Ground rocks / spikes in groups that grow taller and wider each wave
-    const maxCount = score > 400 ? 3 + Math.round(t) : 2;
-    const count = 1 + Math.floor(Math.random() * maxCount);
-    const h = 26 + 12 * t + Math.random() * 24;
-    const w = 18 * count + 4;
-    obstacles.push({ type: "rock", x: W + 20, y: GROUND_Y - h, w, h, count });
   }
 }
+
+// Barrel rolling towards the player, faster than the ground: jump it earlier
+function makeBarrel(t) {
+  const roll = 70 + 90 * t + Math.random() * 50;
+  const r = 13;
+  obstacles.push({ type: "barrel", x: arrivalX(speed + roll), y: GROUND_Y - r * 2, w: r * 2, h: r * 2, r, roll, turn: 0 });
+}
+
+// Flying drone (top of a 22-tall box). Low: skims the ground, must be jumped.
+// Mid: head height, hits a standing player but clears a ducking one.
+// High: harmless unless you jump into it. The sword can't hurt drones.
+// From wave 3 they bob up and down a little (never enough to change
+// whether you need to jump or duck).
+function makeDrone(t) {
+  const tops = [GROUND_Y - 28, GROUND_Y - 58, GROUND_Y - 109];
+  const y = tops[Math.floor(Math.random() * tops.length)];
+  const mul = 1.1 + 0.2 * t;  // drones fly faster than the ground scrolls, more so each wave
+  obstacles.push({
+    type: "drone",
+    x: arrivalX(speed * mul),
+    mul,
+    y, baseY: y,
+    bob: wave >= 3 ? 3 + 5 * t : 0,
+    w: 40,
+    h: 22,
+    spin: Math.random() * 6
+  });
+}
+
+// Stone fire pit whose flames rise and fall: always jump it, easiest when low
+const FIRE_BASE = 10;
+function makeFirePit(t) {
+  const w = 44 + Math.random() * 16;
+  obstacles.push({
+    type: "fire", x: W + 20, y: GROUND_Y - FIRE_BASE, w, h: FIRE_BASE,
+    phase: Math.random() * 6, rate: 3.5 + 1.5 * t
+  });
+}
+function flameHeight(o) { return 6 + 32 * (0.5 + 0.5 * Math.sin(o.phase)); }
+
+// Spiked ball swinging on a chain from above. At the bottom of its swing it's
+// at head height, so ducking is always safe; standing works if you time it
+// while it's swung away, and jumping into it is deadly.
+const BALL_PIVOT_Y = 60, BALL_CHAIN = 145, BALL_R = 10;
+function makeSpikeBall(t) {
+  obstacles.push({
+    type: "spikeball", x: W + 20, y: 0, w: 240, h: 1,  // box spans the whole swing
+    amp: 0.55 + 0.25 * t, rate: 2.6 + 1.2 * t, phase: Math.random() * 6
+  });
+}
+function spikeBallPos(o) {
+  const a = o.amp * Math.sin(o.phase);
+  return { pivotX: o.x + o.w / 2, x: o.x + o.w / 2 + Math.sin(a) * BALL_CHAIN, y: BALL_PIVOT_Y + Math.cos(a) * BALL_CHAIN };
+}
+
+// Laser gate: two posts with a beam between them that blinks on and off,
+// flickering as a warning just before it turns on. A low beam must be jumped
+// and a high one ducked while it's on; while it's off just run through.
+const LASER_WARN = 0.25;
+function makeLaserGate(t) {
+  const low = Math.random() < 0.5;
+  const beamY = low ? GROUND_Y - 22 : GROUND_Y - 48;
+  obstacles.push({
+    type: "laser", x: W + 20, y: beamY - 3, w: 56, h: 6, beamY,
+    cycle: 1.7 - 0.3 * t, onTime: 1.0, clock: Math.random() * 2
+  });
+}
+function laserPhase(o) { return o.clock % o.cycle; }
+function laserOn(o) { return laserPhase(o) < o.onTime; }
+function laserWarning(o) { return laserPhase(o) > o.cycle - LASER_WARN; }
 
 // --- Update ---
 function update(dt) {
@@ -826,21 +910,45 @@ function update(dt) {
       o.spin += dt;
       o.y = o.baseY + Math.sin(o.spin * 3) * o.bob;
     } else if (o.type === "enemy") {
-      o.x -= (speed + o.run) * dt;
+      // A blocked enemy staggers briefly, drifting back with the ground
+      o.stagger = Math.max(0, (o.stagger || 0) - dt);
+      o.x -= (speed + (o.stagger > 0 ? 0 : o.run)) * dt;
       o.runPhase += dt * (o.run + 250) / 24;
+    } else if (o.type === "barrel") {
+      o.x -= (speed + o.roll) * dt;
+      o.turn -= (speed + o.roll) / o.r * dt;
     } else {
       o.x -= speed * dt;
+      if (o.type === "fire") {
+        o.phase += o.rate * dt;
+        o.h = FIRE_BASE + flameHeight(o);
+        o.y = GROUND_Y - o.h;
+      } else if (o.type === "spikeball") {
+        o.phase += o.rate * dt;
+      } else if (o.type === "laser") {
+        const wasOn = laserOn(o);
+        o.clock += dt;
+        if (!wasOn && laserOn(o) && o.x < W && o.x + o.w > 0) sfx.laser();
+      }
     }
   }
   obstacles = obstacles.filter((o) => o.x + o.w > -50);
 
   // The sword hits anything in a box just in front of the player while
-  // swinging, but only from the ground
+  // swinging, but only from the ground. Shields block it once per swing and
+  // knock the enemy back a little.
   if (player.attack > 0 && player.onGround) {
     const left = player.x + player.w - 6, right = player.x + player.w + 46;
     const top = player.y - 30;
     for (const o of obstacles) {
-      if (o.type === "enemy" && o.x < right && o.x + o.w > left && o.y + o.h > top) killEnemy(o);
+      if (o.type !== "enemy" || !(o.x < right && o.x + o.w > left && o.y + o.h > top)) continue;
+      if (!o.shield) { killEnemy(o); continue; }
+      if (o.blockedSwing === player.swingId) continue;
+      o.blockedSwing = player.swingId;
+      o.x += 30;
+      o.stagger = 0.3;
+      popups.push({ x: o.x + o.w / 2, y: o.y - 8, t: 0, text: "BLOCKED" });
+      sfx.clang();
     }
     obstacles = obstacles.filter((o) => !o.dead);
   }
@@ -854,7 +962,7 @@ function update(dt) {
     if (o.jumpedOver && !o.bonusGiven && o.x + o.w < player.x) {
       o.bonusGiven = true;
       bonusScore += JUMP_OVER_BONUS;
-      popups.push({ x: player.x + player.w / 2, y: player.y - 10, t: 0 });
+      popups.push({ x: player.x + player.w / 2, y: player.y - 10, t: 0, text: `+${JUMP_OVER_BONUS}` });
       sfx.bonus();
     }
   }
@@ -882,11 +990,26 @@ function update(dt) {
   const px = player.x + pad, py = player.y + pad;
   const pw = player.w - pad * 2, ph = player.h - pad * 2;
   for (const o of obstacles) {
-    if (px < o.x + o.w - 4 && px + pw > o.x + 4 && py < o.y + o.h - 4 && py + ph > o.y + 4) {
+    if (hitsPlayer(o, px, py, pw, ph)) {
       crash(o);
       break;
     }
   }
+}
+
+// Does obstacle o touch the (already shrunk) player box?
+function hitsPlayer(o, px, py, pw, ph) {
+  if (o.type === "spikeball") {
+    // Circle against box: nearest point of the box to the ball's centre
+    const b = spikeBallPos(o);
+    const nx = Math.max(px, Math.min(b.x, px + pw)), ny = Math.max(py, Math.min(b.y, py + ph));
+    return Math.hypot(b.x - nx, b.y - ny) < BALL_R - 1;
+  }
+  if (o.type === "laser") {
+    // Only the beam hurts, and only while it's on; the posts are scenery
+    return laserOn(o) && px < o.x + o.w - 2 && px + pw > o.x + 2 && py < o.y + o.h && py + ph > o.y;
+  }
+  return px < o.x + o.w - 4 && px + pw > o.x + 4 && py < o.y + o.h - 4 && py + ph > o.y + 4;
 }
 
 // --- Enemies & gold ---
@@ -976,10 +1099,10 @@ function crash(obstacle) {
   sfx.hit();
 
   const pose = getPose();
-  // An enemy, or a drone hitting the upper body, knocks him backwards;
-  // anything else trips him forwards
-  const knockBack = obstacle.type === "enemy" ||
-    (obstacle.type === "drone" && obstacle.y + obstacle.h / 2 < pose.hip.y);
+  // An enemy, the spike ball, or anything flying/beaming at the upper body
+  // knocks him backwards; things on the ground trip him forwards
+  const knockBack = obstacle.type === "enemy" || obstacle.type === "spikeball" ||
+    ((obstacle.type === "drone" || obstacle.type === "laser") && obstacle.y + obstacle.h / 2 < pose.hip.y);
   ragdoll = makeRagdoll(pose, (name) => {
     const upper = UPPER_BODY.has(name);
     let vx = knockBack ? (upper ? -0.45 : 0.25) * speed : (upper ? 0.6 : 0.3) * speed;
@@ -1074,7 +1197,7 @@ function collidePoint(p, clampToScreen) {
   }
 }
 
-function isSolid(o) { return o.type === "rock"; }
+function isSolid(o) { return o.type === "rock" || o.type === "spikes" || o.type === "barrel"; }
 
 function rockBounds(o, r) {
   return { left: o.x + 3 - r, right: o.x + o.w - 3 + r, top: o.y + 4 - r };
@@ -1091,6 +1214,7 @@ const NIGHT = {
   enemy: [232, 190, 190], enemyBack: [128, 96, 96], blade: [196, 212, 228]
 };
 const EYE_RED = "#ff2020";
+const SHIELD_METAL = "#8b97a3";
 const GOLD = "#f5b921", GOLD_EDGE = "#a8740a";
 const STARS = Array.from({ length: 24 }, () => ({ x: Math.random() * W, y: 10 + Math.random() * 130 }));
 let colors;
@@ -1306,8 +1430,18 @@ function drawStickman() {
   drawSword(pts, !ragdoll && player.attack > 0);
 }
 
-function drawEnemy(pts, alive) {
+function drawEnemy(pts, alive, shield) {
   drawFigure(pts, colors.enemy, colors.enemyBack);
+  if (shield) {
+    // Round shield held out in front (he faces left), seen side-on
+    const sx = pts.hip.x - 11, sy = pts.shoulder.y + 13;
+    ctx.fillStyle = SHIELD_METAL;
+    ctx.strokeStyle = colors.enemy;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(sx, sy, 5, 15, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = colors.enemy;
+    ctx.beginPath(); ctx.arc(sx - 1, sy, 2, 0, Math.PI * 2); ctx.fill();
+  }
   const h = pts.head;
   // Angry brows slanting down towards the middle, over glowing red eyes
   // (he faces left, so the face is on the left of the head)
@@ -1353,7 +1487,99 @@ function drawObstacle(o) {
       ctx.fill();
     }
   } else if (o.type === "enemy") {
-    drawEnemy(enemyPose(o), true);
+    drawEnemy(enemyPose(o), true, o.shield);
+  } else if (o.type === "spikes") {
+    // Wooden plank with a row of metal spikes and a couple of nails
+    const plankTop = GROUND_Y - 8;
+    ctx.fillRect(o.x, plankTop, o.w, 8);
+    const count = Math.max(2, Math.round(o.w / 14));
+    const each = o.w / count;
+    ctx.fillStyle = colors.blade;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < count; i++) {
+      const bx = o.x + i * each;
+      ctx.beginPath();
+      ctx.moveTo(bx + each * 0.12, plankTop);
+      ctx.lineTo(bx + each * 0.5, o.y);
+      ctx.lineTo(bx + each * 0.88, plankTop);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    }
+    ctx.fillStyle = colors.sky;
+    ctx.fillRect(o.x + 4, plankTop + 3, 2, 2);
+    ctx.fillRect(o.x + o.w - 6, plankTop + 3, 2, 2);
+  } else if (o.type === "barrel") {
+    // Rolling barrel: its bands turn as it rolls
+    const cx = o.x + o.r, cy = o.y + o.r;
+    ctx.beginPath(); ctx.arc(cx, cy, o.r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = colors.sky;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, o.r * 0.55, 0, Math.PI * 2); ctx.stroke();
+    for (const a of [o.turn, o.turn + Math.PI / 2]) {
+      line(cx - Math.cos(a) * o.r * 0.9, cy - Math.sin(a) * o.r * 0.9, cx + Math.cos(a) * o.r * 0.9, cy + Math.sin(a) * o.r * 0.9);
+    }
+  } else if (o.type === "fire") {
+    // Stone ring with three flickering flames
+    const baseTop = GROUND_Y - FIRE_BASE;
+    ctx.fillRect(o.x, baseTop, o.w, FIRE_BASE);
+    ctx.strokeStyle = colors.sky;
+    ctx.lineWidth = 1.5;
+    for (let sx = o.x + 11; sx < o.x + o.w - 4; sx += 11) line(sx, baseTop + 1, sx, GROUND_Y - 1);
+    const fh = flameHeight(o);
+    [[0.25, 0.75], [0.5, 1], [0.75, 0.8]].forEach(([at, size], i) => {
+      const h = fh * size * (0.9 + 0.1 * Math.sin(o.phase * 3 + i * 2));
+      const cx = o.x + o.w * at, fw = o.w * 0.17;
+      for (const [color, k] of [["#ff7a1a", 1], ["#ffd23f", 0.55]]) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(cx - fw * k, baseTop);
+        ctx.quadraticCurveTo(cx - fw * k, baseTop - h * k * 0.5, cx, baseTop - h * k);
+        ctx.quadraticCurveTo(cx + fw * k, baseTop - h * k * 0.5, cx + fw * k, baseTop);
+        ctx.closePath();
+        ctx.fill();
+      }
+    });
+  } else if (o.type === "spikeball") {
+    // Beam mount, chain, and a spiked ball
+    const b = spikeBallPos(o);
+    ctx.fillRect(b.pivotX - 16, BALL_PIVOT_Y - 7, 32, 5);
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 3]);
+    line(b.pivotX, BALL_PIVOT_Y - 2, b.x, b.y);
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2 + o.phase * 0.3;
+      const tipX = b.x + Math.cos(a) * (BALL_R + 6), tipY = b.y + Math.sin(a) * (BALL_R + 6);
+      ctx.moveTo(b.x + Math.cos(a - 0.3) * BALL_R, b.y + Math.sin(a - 0.3) * BALL_R);
+      ctx.lineTo(tipX, tipY);
+      ctx.lineTo(b.x + Math.cos(a + 0.3) * BALL_R, b.y + Math.sin(a + 0.3) * BALL_R);
+    }
+    ctx.fill();
+    ctx.beginPath(); ctx.arc(b.x, b.y, BALL_R, 0, Math.PI * 2); ctx.fill();
+  } else if (o.type === "laser") {
+    // Two posts (scenery) with emitters; the beam glows red while on and
+    // flickers faintly as a warning just before switching on
+    const postTop = GROUND_Y - 74;
+    ctx.fillStyle = colors.inkBack;
+    ctx.fillRect(o.x - 2, postTop, 5, 74);
+    ctx.fillRect(o.x + o.w - 3, postTop, 5, 74);
+    const on = laserOn(o);
+    ctx.fillStyle = on ? EYE_RED : colors.ink;
+    ctx.fillRect(o.x + 2, o.beamY - 3, 4, 6);
+    ctx.fillRect(o.x + o.w - 6, o.beamY - 3, 4, 6);
+    ctx.strokeStyle = EYE_RED;
+    if (on) {
+      ctx.shadowColor = EYE_RED; ctx.shadowBlur = 8;
+      ctx.lineWidth = 3;
+      line(o.x + 6, o.beamY, o.x + o.w - 6, o.beamY);
+      ctx.shadowBlur = 0;
+    } else if (laserWarning(o) && Math.sin(o.clock * 70) > 0) {
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 1;
+      line(o.x + 6, o.beamY, o.x + o.w - 6, o.beamY);
+      ctx.globalAlpha = 1;
+    }
   } else {
     // Quadcopter drone: body, camera underneath, two spinning rotors, blinking light
     const top = o.y;
@@ -1425,7 +1651,7 @@ function draw() {
   ctx.textAlign = "center";
   for (const p of popups) {
     ctx.globalAlpha = 1 - p.t / 0.8;
-    ctx.fillText(`+${JUMP_OVER_BONUS}`, p.x, p.y);
+    ctx.fillText(p.text, p.x, p.y);
   }
   ctx.globalAlpha = 1;
   ctx.restore();
