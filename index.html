@@ -111,26 +111,26 @@
     padding: 0 0 9vh 6vw;
     box-sizing: border-box;
   }
-  #mainMenu button, #shopMenu button {
+  #mainMenu button, .store-menu button {
     color: #fff;
     background: rgba(20, 12, 30, 0.6);
     border-color: #ff8a1f;
     box-shadow: 0 0 12px rgba(255, 110, 20, 0.45);
     text-shadow: 0 1px 2px #000;
   }
-  #mainMenu button:active, #shopMenu button:active { background: rgba(255, 120, 30, 0.55); }
-  #mainMenu p, #shopMenu p {
+  #mainMenu button:active, .store-menu button:active { background: rgba(255, 120, 30, 0.55); }
+  #mainMenu p, .store-menu p {
     color: #fff;
     text-shadow: 0 1px 3px #000, 0 0 6px #000;
   }
 
-  /* Shop: same artwork as the main menu, dimmed so the cards stand out */
-  #shopMenu {
+  /* Shop + inventory: same artwork as the main menu, dimmed so the cards stand out */
+  .store-menu {
     background: linear-gradient(rgba(12, 8, 24, 0.62), rgba(12, 8, 24, 0.62)),
                 #1a1430 url("pictures/mainmenu.jpg") center 25% / cover no-repeat;
     gap: 8px;
   }
-  #shopMenu h1 { color: #fff; font-size: 28px; margin: 0; text-shadow: 0 2px 4px #000; }
+  .store-menu h1 { color: #fff; font-size: 28px; margin: 0; text-shadow: 0 2px 4px #000; }
   .shop-head { display: flex; align-items: baseline; gap: 28px; }
   #shopGold { color: #ffd34d; font: bold 20px "Courier New", monospace; text-shadow: 0 1px 3px #000; }
   .coin {
@@ -149,6 +149,10 @@
     text-shadow: 0 1px 3px #000;
   }
   .shop-row { display: flex; gap: 14px; }
+  #invMsg { min-height: 1.2em; color: #ffd34d; font-size: 13px; }
+  /* Shop and inventory share one row on the main menu */
+  .menu-pair { display: flex; gap: 10px; width: 240px; }
+  #mainMenu .menu-pair button { min-width: 0; flex: 1; padding: 10px 6px; font-size: 15px; }
   .card {
     width: 180px;
     padding: 10px;
@@ -165,11 +169,12 @@
   .card canvas { width: 160px; height: 56px; }
   .card .name { color: #fff; font: bold 14px "Courier New", monospace; text-shadow: 0 1px 2px #000; }
   .card .tag { font: bold 11px "Courier New", monospace; letter-spacing: 3px; }
-  #shopMenu .card button { min-width: 0; width: 100%; padding: 6px 8px; font-size: 15px; }
-  #shopMenu .card button.cant { opacity: 0.55; }
+  .store-menu .card button { min-width: 0; width: 100%; padding: 6px 8px; font-size: 15px; }
+  .store-menu .card button.cant,
+  .store-menu .card button.owned { opacity: 0.55; }
   #shopMsg { min-height: 1.2em; color: #ffd34d; font-size: 13px; }
   .shop-foot { display: flex; gap: 12px; }
-  #shopMenu .shop-foot button { min-width: 0; padding: 8px 18px; font-size: 15px; }
+  .store-menu .shop-foot button { min-width: 0; padding: 8px 18px; font-size: 15px; }
 </style>
 </head>
 <body>
@@ -181,20 +186,31 @@
 
 <div class="menu" id="mainMenu">
   <button data-action="play">PLAY</button>
-  <button data-action="shop">SHOP</button>
+  <div class="menu-pair">
+    <button data-action="shop">SHOP</button>
+    <button data-action="inventory">INVENTORY</button>
+  </div>
   <button data-action="settings">SETTINGS</button>
   <p id="highText"></p>
   <p id="goldText"></p>
   <p>Jump: JUMP / SPACE &nbsp; Duck: hold DUCK / DOWN &nbsp; Attack: ATTACK / X</p>
 </div>
 
-<div class="menu" id="shopMenu">
+<div class="menu store-menu" id="shopMenu">
   <div class="shop-head"><h1>SHOP</h1><span id="shopGold"></span></div>
   <div id="shopSections"></div>
   <p id="shopMsg"></p>
   <div class="shop-foot">
-    <button data-action="starter" id="starterBtn"></button>
     <button data-action="shopBack">BACK</button>
+  </div>
+</div>
+
+<div class="menu store-menu" id="invMenu">
+  <div class="shop-head"><h1>INVENTORY</h1></div>
+  <div class="shop-row" id="invItems"></div>
+  <p id="invMsg"></p>
+  <div class="shop-foot">
+    <button data-action="invBack">BACK</button>
   </div>
 </div>
 
@@ -381,7 +397,8 @@ const menus = {
   pause: document.getElementById("pauseMenu"),
   settings: document.getElementById("settingsMenu"),
   over: document.getElementById("overMenu"),
-  shop: document.getElementById("shopMenu")
+  shop: document.getElementById("shopMenu"),
+  inventory: document.getElementById("invMenu")
 };
 let settingsReturnTo = "main";   // which menu BACK returns to
 let resetArmed = false;          // reset high score needs a second tap
@@ -396,6 +413,7 @@ function showMenu(name) {
   }
   if (name === "settings") refreshSettingsLabels();
   if (name === "shop") { shopMessage(""); refreshShop(); }
+  if (name === "inventory") { invMessage(""); refreshInventory(); }
 }
 
 function refreshSettingsLabels() {
@@ -450,7 +468,8 @@ const menuActions = {
   play: startGame,
   shop: () => showMenu("shop"),
   shopBack: () => showMenu("main"),
-  starter: () => shopTap("starter"),
+  inventory: () => showMenu("inventory"),
+  invBack: () => showMenu("main"),
   resume: resumeGame,
   main: goToMainMenu,
   settings: () => openSettings(state === "paused" ? "pause" : "main"),
@@ -521,31 +540,27 @@ function refreshShop() {
   for (const [id, card] of Object.entries(shopCards)) {
     const skin = SWORD_SKINS[id];
     const owned = skinState.owned.includes(id);
-    const equipped = skinState.equipped === id;
     const btn = card.querySelector("button");
-    btn.innerHTML = equipped ? "EQUIPPED" : owned ? "EQUIP" : `<span class="coin"></span>${skin.price}`;
+    btn.innerHTML = owned ? "OWNED" : `<span class="coin"></span>${skin.price}`;
+    btn.classList.toggle("owned", owned);
     btn.classList.toggle("cant", !owned && totalGold < skin.price);
-    card.classList.toggle("equipped", equipped);
     drawSwordPreview(card.querySelector("canvas"), skin);
   }
-  document.getElementById("starterBtn").textContent =
-    skinState.equipped === "starter" ? "STARTER SWORD: EQUIPPED" : "USE STARTER SWORD";
 }
 
 function shopMessage(text) { document.getElementById("shopMsg").textContent = text; }
 
-// Tapping a card: equip it if owned, otherwise buy it if there's enough gold
+// Tapping a card buys it if there's enough gold. Equipping is done in the inventory.
 function shopTap(id) {
   const skin = SWORD_SKINS[id];
   if (skinState.owned.includes(id)) {
-    skinState.equipped = id;
-    shopMessage(`${skin.name} EQUIPPED`);
+    shopMessage("YOU OWN THIS — EQUIP IT FROM YOUR INVENTORY");
+    return;
   } else if (totalGold >= skin.price) {
     totalGold -= skin.price;
     localStorage.setItem("stickgo-gold", totalGold);
     skinState.owned.push(id);
-    skinState.equipped = id;
-    shopMessage(`BOUGHT ${skin.name}!`);
+    shopMessage(`BOUGHT ${skin.name}! EQUIP IT FROM YOUR INVENTORY`);
     sfx.coin();
   } else {
     shopMessage(`NOT ENOUGH GOLD — NEED ${skin.price - totalGold} MORE`);
@@ -555,12 +570,45 @@ function shopTap(id) {
   refreshShop();
 }
 
+// --- Inventory ---
+// Every owned sword (starter included) with an EQUIP button; shop order is kept.
+function refreshInventory() {
+  const row = document.getElementById("invItems");
+  row.innerHTML = "";
+  for (const [id, skin] of Object.entries(SWORD_SKINS)) {
+    if (!skinState.owned.includes(id)) continue;
+    const info = RARITIES[skin.rarity] || { label: "STARTER", color: "#ffffff" };
+    const equipped = skinState.equipped === id;
+    const card = document.createElement("div");
+    card.className = "card" + (equipped ? " equipped" : "");
+    card.innerHTML = `<canvas width="320" height="112"></canvas>
+      <div class="name">${skin.name}</div>
+      <div class="tag" style="color:${info.color}">${info.label}</div>
+      <button>${equipped ? "EQUIPPED" : "EQUIP"}</button>`;
+    card.querySelector("button").addEventListener("click", () => equipSkin(id));
+    row.appendChild(card);
+    drawSwordPreview(card.querySelector("canvas"), skin);
+  }
+  if (skinState.owned.length < 2) invMessage("BUY MORE SWORDS IN THE SHOP");
+}
+
+function equipSkin(id) {
+  if (skinState.equipped === id) return;
+  skinState.equipped = id;
+  saveSkins();
+  refreshInventory();
+  invMessage(`${SWORD_SKINS[id].name} EQUIPPED`);
+}
+
+function invMessage(text) { document.getElementById("invMsg").textContent = text; }
+
 // Called by the Android app when the phone's back button is pressed.
 // Returns true if the game handled it, false to let the app close.
 window.stickgoBack = function () {
   if (state === "dying") return true;
   if (state === "running") { pauseGame(); return true; }
   if (menus.shop.classList.contains("open")) { showMenu("main"); return true; }
+  if (menus.inventory.classList.contains("open")) { showMenu("main"); return true; }
   if (menus.settings.classList.contains("open")) { showMenu(settingsReturnTo); return true; }
   if (state === "paused") { resumeGame(); return true; }
   if (state === "over") { goToMainMenu(); return true; }
