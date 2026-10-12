@@ -47,6 +47,8 @@
   .btn.pressed { background: rgba(128, 128, 128, 0.4); }
   #duckBtn { left: 4vw; }
   #jumpBtn { right: 4vw; }
+  /* Attack sits next to jump so the right thumb can reach both */
+  #attackBtn { right: calc(7vw + max(var(--btn-size), 64px)); font-size: 14px; }
   /* Hide the buttons on computers with a mouse; keyboard is used there */
   @media (hover: hover) and (pointer: fine) {
     .btn { display: none; }
@@ -127,13 +129,15 @@
 <canvas id="game" width="900" height="300"></canvas>
 <div class="btn" id="duckBtn">DUCK</div>
 <div class="btn" id="jumpBtn">JUMP</div>
+<div class="btn" id="attackBtn">ATTACK</div>
 <div id="pauseBtn" aria-label="Pause"><span></span><span></span></div>
 
 <div class="menu" id="mainMenu">
   <button data-action="play">PLAY</button>
   <button data-action="settings">SETTINGS</button>
   <p id="highText"></p>
-  <p>Jump: JUMP button / SPACE &nbsp; Duck: hold DUCK / DOWN</p>
+  <p id="goldText"></p>
+  <p>Jump: JUMP / SPACE &nbsp; Duck: hold DUCK / DOWN &nbsp; Attack: ATTACK / X</p>
 </div>
 
 <div class="menu" id="pauseMenu">
@@ -155,6 +159,7 @@
 <div class="menu" id="overMenu">
   <h1>GAME OVER</h1>
   <p id="overText"></p>
+  <p id="overGold"></p>
   <button data-action="play">PLAY AGAIN</button>
   <button data-action="main">MAIN MENU</button>
 </div>
@@ -186,6 +191,9 @@ const JUMP_BUFFER = 0.1;     // s a jump press is remembered while still in the 
 // Movement is split into steps no longer than this, so at top speed the world
 // moves ~10px per step and small rocks can't skip past the player on slow phones.
 const PHYSICS_STEP = 1 / 120;
+const ATTACK_DURATION = 0.25;  // s a sword swing lasts (and can hit for)
+const ATTACK_COOLDOWN = 0.1;   // s after a swing before the next one
+const SWORD_LEN = 26;
 
 // Speeds in px/s; gain is px/s added per second
 const DIFFICULTIES = {
@@ -219,6 +227,9 @@ if (oldHigh) {
 }
 function high(diff) { return highScores[diff] || 0; }
 
+// Gold dropped by enemies; the total is kept across runs
+let totalGold = Number(localStorage.getItem("stickgo-gold") || 0);
+
 // --- Game state ---
 let state = "ready";         // "ready" | "running" | "paused" | "dying" | "over"
 let speed, score, distance, obstacles, clouds, groundBits, spawnTimer, lastTime;
@@ -226,6 +237,9 @@ let runDiff = settings.difficulty;  // difficulty of the current run; settings c
 let jumpBuffer = 0;          // time left on a remembered jump press
 let lastMilestone = 0;       // last multiple of 100 reached, for the score flash
 let flashTime = 0;
+let coins = [];              // gold coins dropped by enemies, waiting to be picked up
+let corpses = [];            // ragdolls of slain enemies
+let runGold = 0;
 
 const player = {
   x: 80,
@@ -234,6 +248,8 @@ const player = {
   onGround: true,
   ducking: false,
   runPhase: 0,
+  attack: 0,                 // time left in the current sword swing
+  attackCooldown: 0,
   standH: 60,
   duckH: 36,
   w: 26,
@@ -254,6 +270,11 @@ function reset() {
   player.vy = 0;
   player.onGround = true;
   player.ducking = false;
+  player.attack = 0;
+  player.attackCooldown = 0;
+  coins = [];
+  corpses = [];
+  runGold = 0;
   ragdoll = null;
   shakeTime = 0;
   clouds = Array.from({ length: 4 }, () => ({
@@ -284,6 +305,7 @@ function showMenu(name) {
   if (name === "main") {
     document.getElementById("highText").textContent =
       `HIGH SCORE ${pad5(high(settings.difficulty))} (${DIFFICULTIES[settings.difficulty].label})`;
+    document.getElementById("goldText").textContent = `GOLD ${totalGold}`;
   }
   if (name === "settings") refreshSettingsLabels();
 }
@@ -421,7 +443,10 @@ function beep(freq, dur, { type = "square", vol = 0.06, slideTo, delay = 0 } = {
 const sfx = {
   jump: () => beep(500, 0.12, { slideTo: 900 }),
   point: () => { beep(880, 0.08); beep(1320, 0.14, { delay: 0.09 }); },
-  hit: () => beep(240, 0.4, { type: "sawtooth", vol: 0.08, slideTo: 50 })
+  hit: () => beep(240, 0.4, { type: "sawtooth", vol: 0.08, slideTo: 50 }),
+  slash: () => beep(1400, 0.09, { type: "triangle", vol: 0.05, slideTo: 300 }),
+  kill: () => beep(180, 0.18, { vol: 0.07, slideTo: 70 }),
+  coin: () => { beep(990, 0.05, { vol: 0.04 }); beep(1480, 0.1, { vol: 0.04, delay: 0.05 }); }
 };
 
 // --- Input ---
@@ -435,6 +460,13 @@ function duck() {
   player.ducking = true;
   // Fast-fall when ducking mid-air
   if (!player.onGround) player.vy = Math.max(player.vy, 600);
+}
+
+function attack() {
+  if (state !== "running" || player.attackCooldown > 0) return;
+  player.attack = ATTACK_DURATION;
+  player.attackCooldown = ATTACK_DURATION + ATTACK_COOLDOWN;
+  sfx.slash();
 }
 
 document.addEventListener("keydown", (e) => {
@@ -453,15 +485,20 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     duck();
   }
+  if (["KeyX", "KeyF"].includes(e.code) && !e.repeat) {
+    e.preventDefault();
+    attack();
+  }
 });
 
 document.addEventListener("keyup", (e) => {
   if (["ArrowDown", "KeyS"].includes(e.code)) player.ducking = false;
 });
 
-// Touch: on-screen JUMP / DUCK buttons (tapping elsewhere does nothing)
+// Touch: on-screen JUMP / DUCK / ATTACK buttons (tapping elsewhere does nothing)
 const jumpBtn = document.getElementById("jumpBtn");
 const duckBtn = document.getElementById("duckBtn");
+const attackBtn = document.getElementById("attackBtn");
 const pauseBtn = document.getElementById("pauseBtn");
 
 function releaseDuck() {
@@ -479,8 +516,14 @@ jumpBtn.addEventListener("pointerdown", (e) => {
   jumpBtn.classList.add("pressed");
   jump();
 });
+attackBtn.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  attackBtn.classList.add("pressed");
+  attack();
+});
 for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
   jumpBtn.addEventListener(ev, () => jumpBtn.classList.remove("pressed"));
+  attackBtn.addEventListener(ev, () => attackBtn.classList.remove("pressed"));
   duckBtn.addEventListener(ev, releaseDuck);
 }
 
@@ -494,20 +537,32 @@ document.addEventListener("contextmenu", (e) => e.preventDefault());
 // --- Obstacles ---
 function spawnObstacle() {
   const roll = Math.random();
-  if (score > 200 && roll < 0.3) {
-    // Flying bird (top of a 22-tall box). Low: skims the ground, must be jumped.
+  if (score > 200 && roll < 0.25) {
+    // Flying drone (top of a 22-tall box). Low: skims the ground, must be jumped.
     // Mid: head height, hits a standing player but clears a ducking one.
-    // High: harmless unless you jump into it.
+    // High: harmless unless you jump into it. The sword can't hurt drones.
     const tops = [GROUND_Y - 28, GROUND_Y - 58, GROUND_Y - 109];
     obstacles.push({
-      type: "bird",
+      type: "drone",
       x: W + 20,
       y: tops[Math.floor(Math.random() * tops.length)],
       w: 40,
       h: 22,
-      flap: 0
+      spin: 0
     });
-  } else if (score > 100 && roll < 0.45) {
+  } else if (score > 40 && roll < 0.45) {
+    // Enemy stickman charging at the player: slash him or jump over him
+    obstacles.push({
+      type: "enemy",
+      x: W + 20,
+      y: GROUND_Y - player.standH,
+      w: player.w,
+      h: player.standH,
+      run: 80 + Math.random() * 80,  // px/s he runs towards the player
+      runPhase: Math.random() * 6,
+      onGround: true, ducking: false, vy: 0, attack: 0  // fields read by getPose
+    });
+  } else if (score > 100 && roll < 0.58) {
     // Fallen log: low but long, so the jump has to be timed earlier
     const h = 16 + Math.random() * 6;
     const w = 60 + Math.random() * 50;
@@ -553,6 +608,8 @@ function update(dt) {
   // ducked drops him straight down instead of floating for a few frames
   if (player.onGround) player.y = GROUND_Y - player.h;
   if (player.onGround) player.runPhase += dt * speed / 24;
+  player.attack = Math.max(0, player.attack - dt);
+  player.attackCooldown = Math.max(0, player.attackCooldown - dt);
 
   // Spawn obstacles — gap shrinks as speed rises
   spawnTimer -= dt;
@@ -563,10 +620,34 @@ function update(dt) {
   }
 
   for (const o of obstacles) {
-    o.x -= (o.type === "bird" ? speed * 1.1 : speed) * dt;
-    if (o.type === "bird") o.flap += dt * 10;
+    if (o.type === "drone") {
+      o.x -= speed * 1.1 * dt;
+      o.spin += dt;
+    } else if (o.type === "enemy") {
+      o.x -= (speed + o.run) * dt;
+      o.runPhase += dt * (o.run + 250) / 24;
+    } else {
+      o.x -= speed * dt;
+    }
   }
   obstacles = obstacles.filter((o) => o.x + o.w > -50);
+
+  // The sword hits anything in a box just in front of the player while swinging
+  if (player.attack > 0) {
+    const left = player.x + player.w - 6, right = player.x + player.w + 46;
+    const top = player.y - 30;
+    for (const o of obstacles) {
+      if (o.type === "enemy" && o.x < right && o.x + o.w > left && o.y + o.h > top) killEnemy(o);
+    }
+    obstacles = obstacles.filter((o) => !o.dead);
+  }
+
+  updateCoins(dt);
+  // Slain enemies stay where they fell, so they scroll away with the ground
+  for (const c of corpses) {
+    for (const p of Object.values(c.points)) { p.x -= speed * dt; p.px -= speed * dt; }
+  }
+  corpses = corpses.filter((c) => Object.values(c.points).some((p) => p.x > -40));
 
   for (const c of clouds) {
     c.x -= speed * c.speed * dt;
@@ -589,6 +670,54 @@ function update(dt) {
   }
 }
 
+// --- Enemies & gold ---
+function killEnemy(o) {
+  o.dead = true;
+  shakeTime = Math.max(shakeTime, 0.1);
+  sfx.kill();
+  // He's flung away from the sword, upper body first
+  corpses.push(makeRagdoll(enemyPose(o), (name) => {
+    const upper = UPPER_BODY.has(name);
+    return [(upper ? 300 : 170) + Math.random() * 80, upper ? -380 : -180];
+  }));
+  const count = 1 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < count; i++) {
+    coins.push({
+      x: o.x + o.w / 2,
+      y: o.y + 20,
+      vx: 40 + Math.random() * 160,   // relative to the ground
+      vy: -300 - Math.random() * 220,
+      spin: Math.random() * 6
+    });
+  }
+}
+
+function updateCoins(dt) {
+  const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
+  for (const c of coins) {
+    c.spin += dt * 8;
+    const dx = cx - c.x, dy = cy - c.y, d = Math.hypot(dx, dy) || 1;
+    if (d < 110) {
+      // Close coins are pulled in, so jumping over them doesn't miss them
+      c.x += (dx / d) * 700 * dt;
+      c.y += (dy / d) * 700 * dt;
+    } else {
+      c.vy += GRAVITY * 0.6 * dt;
+      c.x += (c.vx - speed) * dt;
+      c.y += c.vy * dt;
+      if (c.y > GROUND_Y - 7) { c.y = GROUND_Y - 7; c.vy *= -0.45; c.vx *= 0.6; }
+    }
+    if (Math.abs(c.x - cx) < player.w / 2 + 14 && Math.abs(c.y - cy) < player.h / 2 + 14) {
+      c.taken = true;
+      runGold++;
+      totalGold++;
+      localStorage.setItem("stickgo-gold", totalGold);
+      sfx.coin();
+    }
+  }
+  coins = coins.filter((c) => !c.taken && c.x > -20);
+}
+
 function gameOver() {
   state = "over";
   if (score > high(runDiff)) {
@@ -598,6 +727,7 @@ function gameOver() {
   releaseDuck();
   document.getElementById("overText").textContent =
     `SCORE ${pad5(score)}   HIGH ${pad5(high(runDiff))} (${DIFFICULTIES[runDiff].label})`;
+  document.getElementById("overGold").textContent = `GOLD +${runGold}   TOTAL ${totalGold}`;
   showMenu("over");
 }
 
@@ -626,48 +756,59 @@ function crash(obstacle) {
   sfx.hit();
 
   const pose = getPose();
-  // A bird hitting the upper body knocks him backwards; anything else trips him forwards
-  const knockBack = obstacle.type === "bird" && obstacle.y + obstacle.h / 2 < pose.hip.y;
-  const points = {};
-  for (const [name, pt] of Object.entries(pose)) {
+  // An enemy, or a drone hitting the upper body, knocks him backwards;
+  // anything else trips him forwards
+  const knockBack = obstacle.type === "enemy" ||
+    (obstacle.type === "drone" && obstacle.y + obstacle.h / 2 < pose.hip.y);
+  ragdoll = makeRagdoll(pose, (name) => {
     const upper = UPPER_BODY.has(name);
     let vx = knockBack ? (upper ? -0.45 : 0.25) * speed : (upper ? 0.6 : 0.3) * speed;
     vx += (Math.random() - 0.5) * 60;
     const vy = Math.min(player.vy, 0) * 0.6 - (knockBack ? 220 : 480) * (upper ? 1 : 0.4);
+    return [vx, vy];
+  });
+  ragdoll.clamp = true;  // the player's body stays on screen
+
+  // Collision is detected a few pixels late, so he's slightly inside the rock.
+  // Step him back to touching it (hidden by the screen shake).
+  if (isSolid(obstacle)) {
+    const points = Object.values(ragdoll.points);
+    let overlap = 0;
+    for (const p of points) {
+      const b = rockBounds(obstacle, p.r);
+      if (p.y > b.top) overlap = Math.max(overlap, p.x - b.left);
+    }
+    for (const p of points) { p.x -= overlap; p.px -= overlap; }
+  }
+}
+
+// Turns a pose into free points; velocity(name) gives each joint's [vx, vy]
+function makeRagdoll(pose, velocity) {
+  const points = {};
+  for (const [name, pt] of Object.entries(pose)) {
+    const [vx, vy] = velocity(name);
     points[name] = {
       x: pt.x, y: pt.y,
       px: pt.x - vx * RAGDOLL_STEP, py: pt.y - vy * RAGDOLL_STEP,
       r: name === "head" ? BODY.headR : 2
     };
   }
-
-  // Collision is detected a few pixels late, so he's slightly inside the rock.
-  // Step him back to touching it (hidden by the screen shake).
-  if (obstacle.type !== "bird") {
-    let overlap = 0;
-    for (const p of Object.values(points)) {
-      const b = rockBounds(obstacle, p.r);
-      if (p.y > b.top) overlap = Math.max(overlap, p.x - b.left);
-    }
-    for (const p of Object.values(points)) { p.x -= overlap; p.px -= overlap; }
-  }
   const links = [...BONES, ...BRACES].map(([a, b]) =>
     [points[a], points[b], Math.hypot(points[a].x - points[b].x, points[a].y - points[b].y)]);
-  ragdoll = { points, links, time: 0, acc: 0 };
+  return { points, links, time: 0, acc: 0, clamp: false };
 }
 
-function updateRagdoll(dt) {
-  ragdoll.time += dt;
-  ragdoll.acc += dt;
-  while (ragdoll.acc >= RAGDOLL_STEP) {
-    ragdollStep();
-    ragdoll.acc -= RAGDOLL_STEP;
+function updateRagdoll(rd, dt) {
+  rd.time += dt;
+  rd.acc += dt;
+  while (rd.acc >= RAGDOLL_STEP) {
+    ragdollStep(rd);
+    rd.acc -= RAGDOLL_STEP;
   }
-  if (state === "dying" && ragdoll.time >= RAGDOLL_DURATION) gameOver();
 }
 
-function ragdollStep() {
-  const pts = Object.values(ragdoll.points);
+function ragdollStep(rd) {
+  const pts = Object.values(rd.points);
   const g = GRAVITY * RAGDOLL_STEP * RAGDOLL_STEP;
 
   for (const p of pts) {
@@ -680,14 +821,14 @@ function ragdollStep() {
   }
 
   for (let i = 0; i < 8; i++) {
-    for (const [a, b, len] of ragdoll.links) {
+    for (const [a, b, len] of rd.links) {
       const dx = b.x - a.x, dy = b.y - a.y;
       const d = Math.hypot(dx, dy) || 0.001;
       const k = (d - len) / d / 2;
       a.x += dx * k; a.y += dy * k;
       b.x -= dx * k; b.y -= dy * k;
     }
-    for (const p of pts) collidePoint(p);
+    for (const p of pts) collidePoint(p, rd.clamp);
   }
 
   // Ground friction so he skids to a stop instead of sliding forever
@@ -696,13 +837,13 @@ function ragdollStep() {
   }
 }
 
-function collidePoint(p) {
+function collidePoint(p, clampToScreen) {
   if (p.y > GROUND_Y - p.r) p.y = GROUND_Y - p.r;
-  p.x = Math.max(p.r, Math.min(W - p.r, p.x));
+  if (clampToScreen) p.x = Math.max(p.r, Math.min(W - p.r, p.x));
   // Rocks and logs are solid. Only block a point on the face it crossed this
   // step (using its previous position), so nothing gets flung out sideways.
   for (const o of obstacles) {
-    if (o.type === "bird") continue;
+    if (!isSolid(o)) continue;
     const b = rockBounds(o, p.r);
     if (!(p.x > b.left && p.x < b.right && p.y > b.top)) continue;
     // Moving a Verlet point also changes its implied velocity, so the previous
@@ -713,14 +854,24 @@ function collidePoint(p) {
   }
 }
 
+function isSolid(o) { return o.type === "rock" || o.type === "log"; }
+
 function rockBounds(o, r) {
   return { left: o.x + 3 - r, right: o.x + o.w - 3 + r, top: o.y + 4 - r };
 }
 
 // --- Drawing ---
 // Day/night cycle: every 1000 points it fades to night around 700 and back by 1000
-const DAY   = { sky: [247, 247, 247], ink: [83, 83, 83],    inkBack: [163, 163, 163], cloud: [224, 224, 224] };
-const NIGHT = { sky: [32, 35, 42],    ink: [214, 214, 214], inkBack: [118, 118, 118], cloud: [58, 62, 72] };
+const DAY = {
+  sky: [247, 247, 247], ink: [83, 83, 83], inkBack: [163, 163, 163], cloud: [224, 224, 224],
+  enemy: [45, 28, 28], enemyBack: [150, 112, 112], blade: [120, 136, 152]
+};
+const NIGHT = {
+  sky: [32, 35, 42], ink: [214, 214, 214], inkBack: [118, 118, 118], cloud: [58, 62, 72],
+  enemy: [232, 190, 190], enemyBack: [128, 96, 96], blade: [196, 212, 228]
+};
+const EYE_RED = "#ff2020";
+const GOLD = "#f5b921", GOLD_EDGE = "#a8740a";
 const STARS = Array.from({ length: 24 }, () => ({ x: Math.random() * W, y: 10 + Math.random() * 130 }));
 let colors;
 let night = 0;
@@ -764,10 +915,10 @@ function limb(from, angle, len) {
   return { x: from.x + Math.sin(angle) * len, y: from.y + Math.cos(angle) * len };
 }
 
-// Builds the joint positions for the current frame.
+// Builds the joint positions for the current frame of a stickman facing right
+// (the player by default; enemies pass themselves and get mirrored).
 // legs: [thighAngle, kneeBend], arms: [upperArmAngle, elbowBend]; index 0 = front, 1 = back
-function getPose() {
-  const p = player;
+function getPose(p = player) {
   const ph = p.runPhase;
   let lean, legs, arms;
 
@@ -793,6 +944,11 @@ function getPose() {
     });
     arms = [0, Math.PI].map((off) => [-0.75 * Math.sin(ph + off), 1.6]);
   }
+  if (p.attack > 0) {
+    // Sword swing: the front arm sweeps from over the head down to the front
+    const t = 1 - p.attack / ATTACK_DURATION;
+    arms[0] = [SWING_FROM - SWING_ARC * (1 - (1 - t) * (1 - t)), 0.15];
+  }
 
   // Place hips so the lowest foot rests on the bottom of the player box.
   // This makes the body bob naturally as the legs move.
@@ -817,7 +973,15 @@ function getPose() {
   return pose;
 }
 
-function drawFigure(pts) {
+// Enemies run towards the player, so their pose is mirrored to face left
+function enemyPose(o) {
+  const pose = getPose(o);
+  const cx = o.x + o.w / 2;
+  for (const pt of Object.values(pose)) pt.x = 2 * cx - pt.x;
+  return pose;
+}
+
+function drawFigure(pts, ink = colors.ink, inkBack = colors.inkBack) {
   ctx.lineWidth = 4;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -831,20 +995,87 @@ function drawFigure(pts) {
   };
 
   // Far side first (lighter, for depth) so the near side draws over it
-  chain(colors.inkBack, "hip", "kneeB", "footB");
-  chain(colors.inkBack, "shoulder", "elbowB", "handB");
-  chain(colors.ink, "neck", "shoulder", "hip");
-  chain(colors.ink, "hip", "kneeF", "footF");
-  chain(colors.ink, "shoulder", "elbowF", "handF");
+  chain(inkBack, "hip", "kneeB", "footB");
+  chain(inkBack, "shoulder", "elbowB", "handB");
+  chain(ink, "neck", "shoulder", "hip");
+  chain(ink, "hip", "kneeF", "footF");
+  chain(ink, "shoulder", "elbowF", "handF");
 
-  ctx.fillStyle = colors.ink;
+  ctx.fillStyle = ink;
   ctx.beginPath();
   ctx.arc(pts.head.x, pts.head.y, BODY.headR, 0, Math.PI * 2);
   ctx.fill();
 }
 
+// Sword angles use the same convention as limb(): 0 = down, PI = straight up
+const SWING_FROM = 3.6;   // upper arm angle at the start of a swing (raised behind the head)
+const SWING_ARC = 2.9;    // how far it sweeps forwards
+
+function drawSword(pts, swinging) {
+  const hand = pts.handF, elbow = pts.elbowF;
+  const forearm = Math.atan2(hand.x - elbow.x, hand.y - elbow.y);
+  // Held pointing up and forwards while running; in line with the arm mid-swing
+  const angle = forearm + (swinging ? 0 : 0.9);
+  const tip = limb(hand, angle, SWORD_LEN);
+  const guard = limb(hand, angle, 4);
+  const side = { x: Math.cos(angle) * 5, y: -Math.sin(angle) * 5 };
+
+  if (swinging) {
+    // Faint arc showing the path of the blade
+    const sh = pts.shoulder;
+    const r = Math.hypot(tip.x - sh.x, tip.y - sh.y);
+    let tipAngle = Math.atan2(tip.x - sh.x, tip.y - sh.y);
+    if (tipAngle < 0) tipAngle += Math.PI * 2;  // the swing starts past straight up
+    const now = Math.PI / 2 - tipAngle;         // limb() angle -> canvas arc angle
+    const from = Math.max(Math.PI / 2 - (SWING_FROM + 0.15), now - 1.4);
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = colors.blade;
+    ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.arc(sh.x, sh.y, r, from, now); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  ctx.lineCap = "round";
+  ctx.strokeStyle = colors.blade;
+  ctx.lineWidth = 3;
+  line(guard.x, guard.y, tip.x, tip.y);
+  ctx.strokeStyle = colors.ink;
+  ctx.lineWidth = 3;
+  line(guard.x - side.x, guard.y - side.y, guard.x + side.x, guard.y + side.y);
+}
+
 function drawStickman() {
-  drawFigure(ragdoll ? ragdoll.points : getPose());
+  const pts = ragdoll ? ragdoll.points : getPose();
+  drawFigure(pts);
+  drawSword(pts, !ragdoll && player.attack > 0);
+}
+
+function drawEnemy(pts, alive) {
+  drawFigure(pts, colors.enemy, colors.enemyBack);
+  const h = pts.head;
+  // Angry brows slanting down towards the middle, over glowing red eyes
+  // (he faces left, so the face is on the left of the head)
+  ctx.strokeStyle = colors.sky;
+  ctx.lineWidth = 1.6;
+  line(h.x - 7.5, h.y - 5.5, h.x - 3.5, h.y - 2.8);
+  line(h.x + 2, h.y - 5.5, h.x - 1.5, h.y - 2.8);
+  ctx.fillStyle = EYE_RED;
+  if (alive) { ctx.shadowColor = EYE_RED; ctx.shadowBlur = 6; }
+  ctx.beginPath(); ctx.arc(h.x - 4.8, h.y - 0.8, 1.8, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(h.x - 0.2, h.y - 0.8, 1.8, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+  // Snarl
+  ctx.strokeStyle = colors.sky;
+  ctx.lineWidth = 1.2;
+  line(h.x - 5, h.y + 4, h.x - 1.5, h.y + 3.2);
+}
+
+function drawCoin(c) {
+  // Spinning: the coin's width follows the spin
+  const w = Math.max(1.2, Math.abs(Math.cos(c.spin)) * 6);
+  ctx.fillStyle = GOLD;
+  ctx.strokeStyle = GOLD_EDGE;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.ellipse(c.x, c.y, w, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 }
 
 function drawObstacle(o) {
@@ -877,17 +1108,25 @@ function drawObstacle(o) {
       ctx.closePath();
       ctx.fill();
     }
+  } else if (o.type === "enemy") {
+    drawEnemy(enemyPose(o), true);
   } else {
-    // Bird with flapping wings
-    const midY = o.y + o.h / 2;
-    const wing = Math.sin(o.flap) * 12;
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.ellipse(o.x + 20, midY, 14, 6, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(o.x + 4, midY); ctx.lineTo(o.x - 4, midY - 3); ctx.lineTo(o.x + 4, midY + 3);
-    ctx.fill();
-    line(o.x + 16, midY, o.x + 22, midY - wing);
-    line(o.x + 22, midY - wing, o.x + 30, midY - wing * 0.6);
+    // Quadcopter drone: body, camera underneath, two spinning rotors, blinking light
+    const top = o.y;
+    ctx.lineWidth = 2;
+    line(o.x + 6, top + 9, o.x + 34, top + 9);           // arms
+    line(o.x + 6, top + 9, o.x + 6, top + 4);            // rotor posts
+    line(o.x + 34, top + 9, o.x + 34, top + 4);
+    ctx.fillRect(o.x + 11, top + 7, 18, 8);
+    ctx.beginPath(); ctx.arc(o.x + 20, top + 17, 3.5, 0, Math.PI * 2); ctx.fill();  // camera
+    for (const rx of [o.x + 6, o.x + 34]) {
+      const blur = 3 + Math.abs(Math.sin(o.spin * 40 + rx)) * 6;
+      ctx.beginPath(); ctx.ellipse(rx, top + 3, blur, 1.6, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    if (Math.sin(o.spin * 12) > 0) {
+      ctx.fillStyle = EYE_RED;
+      ctx.beginPath(); ctx.arc(o.x + 13, top + 11, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
   }
 }
 
@@ -933,9 +1172,18 @@ function draw() {
   ctx.fillStyle = colors.ink;
   for (const g of groundBits) ctx.fillRect(g.x, g.y, g.w, 2);
 
+  for (const c of corpses) drawEnemy(c.points, false);
   obstacles.forEach(drawObstacle);
+  coins.forEach(drawCoin);
   drawStickman();
   ctx.restore();
+
+  // Gold collected this run, under the score
+  drawCoin({ x: W - 100, y: 56, spin: 0 });
+  ctx.fillStyle = colors.ink;
+  ctx.font = "bold 18px 'Courier New', monospace";
+  ctx.textAlign = "right";
+  ctx.fillText(`x ${String(runGold).padStart(3, "0")}`, W - 20, 62);
 
   // Score (the current score blinks for a moment every 100 points)
   ctx.fillStyle = colors.ink;
@@ -953,7 +1201,11 @@ function loop(time) {
     const steps = Math.ceil(dt / PHYSICS_STEP);
     for (let i = 0; i < steps && state === "running"; i++) update(dt / steps);
   }
-  if (ragdoll) updateRagdoll(dt);
+  if (ragdoll) {
+    updateRagdoll(ragdoll, dt);
+    if (state === "dying" && ragdoll.time >= RAGDOLL_DURATION) gameOver();
+  }
+  for (const c of corpses) updateRagdoll(c, dt);
   if (shakeTime > 0) shakeTime -= dt;
   if (flashTime > 0) flashTime -= dt;
   draw();
