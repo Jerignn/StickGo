@@ -759,11 +759,6 @@ function spawnObstacle() {
         onGround: true, ducking: false, vy: 0, attack: 0  // fields read by getPose
       });
     }
-  } else if (score > 100 && roll < enemyChance + 0.13) {
-    // Fallen log: low but long, so the jump has to be timed earlier. Longer each wave.
-    const h = 16 + Math.random() * 6;
-    const w = 60 + 50 * t + Math.random() * 50;
-    obstacles.push({ type: "log", x: W + 20, y: GROUND_Y - h, w, h });
   } else {
     // Ground rocks / spikes in groups that grow taller and wider each wave
     const maxCount = score > 400 ? 3 + Math.round(t) : 2;
@@ -1065,7 +1060,7 @@ function ragdollStep(rd) {
 function collidePoint(p, clampToScreen) {
   if (p.y > GROUND_Y - p.r) p.y = GROUND_Y - p.r;
   if (clampToScreen) p.x = Math.max(p.r, Math.min(W - p.r, p.x));
-  // Rocks and logs are solid. Only block a point on the face it crossed this
+  // Rocks are solid. Only block a point on the face it crossed this
   // step (using its previous position), so nothing gets flung out sideways.
   for (const o of obstacles) {
     if (!isSolid(o)) continue;
@@ -1079,7 +1074,7 @@ function collidePoint(p, clampToScreen) {
   }
 }
 
-function isSolid(o) { return o.type === "rock" || o.type === "log"; }
+function isSolid(o) { return o.type === "rock"; }
 
 function rockBounds(o, r) {
   return { left: o.x + 3 - r, right: o.x + o.w - 3 + r, top: o.y + 4 - r };
@@ -1343,20 +1338,7 @@ function drawCoin(c) {
 function drawObstacle(o) {
   ctx.fillStyle = colors.ink;
   ctx.strokeStyle = colors.ink;
-  if (o.type === "log") {
-    // Rounded log with a ring on the near end and a couple of bark lines
-    const r = o.h / 2, midY = o.y + r;
-    ctx.beginPath();
-    ctx.arc(o.x + r, midY, r, Math.PI / 2, Math.PI * 1.5);
-    ctx.arc(o.x + o.w - r, midY, r, -Math.PI / 2, Math.PI / 2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = colors.sky;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(o.x + o.w - r, midY, r * 0.5, 0, Math.PI * 2); ctx.stroke();
-    line(o.x + r, midY - r * 0.4, o.x + o.w * 0.45, midY - r * 0.4);
-    line(o.x + o.w * 0.3, midY + r * 0.35, o.x + o.w - r * 2.2, midY + r * 0.35);
-  } else if (o.type === "rock") {
+  if (o.type === "rock") {
     const each = (o.w - 4) / o.count;
     for (let i = 0; i < o.count; i++) {
       const bx = o.x + 2 + i * each;
