@@ -473,8 +473,9 @@ function duck() {
   if (!player.onGround) player.vy = Math.max(player.vy, 600);
 }
 
+// The sword only works with both feet on the ground; mid-air presses are ignored
 function attack() {
-  if (state !== "running" || player.attackCooldown > 0) return;
+  if (state !== "running" || player.attackCooldown > 0 || !player.onGround) return;
   player.attack = ATTACK_DURATION;
   player.attackCooldown = ATTACK_DURATION + ATTACK_COOLDOWN;
   sfx.slash();
@@ -647,6 +648,7 @@ function update(dt) {
     player.y = GROUND_Y - player.standH;  // stand up first if he was ducking
     player.vy = JUMP_VELOCITY;
     player.onGround = false;
+    player.attack = 0;  // jumping cancels a swing in progress
     jumpBuffer = 0;
     sfx.jump();
   }
@@ -686,8 +688,9 @@ function update(dt) {
   }
   obstacles = obstacles.filter((o) => o.x + o.w > -50);
 
-  // The sword hits anything in a box just in front of the player while swinging
-  if (player.attack > 0) {
+  // The sword hits anything in a box just in front of the player while
+  // swinging, but only from the ground
+  if (player.attack > 0 && player.onGround) {
     const left = player.x + player.w - 6, right = player.x + player.w + 46;
     const top = player.y - 30;
     for (const o of obstacles) {
