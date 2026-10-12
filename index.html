@@ -149,25 +149,56 @@
     text-shadow: 0 1px 3px #000;
   }
   .shop-row { display: flex; gap: 14px; }
+  #shopSections { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .tabs { display: flex; gap: 8px; }
+  .store-menu .tab {
+    min-width: 0;
+    padding: 6px 12px;
+    font-size: 12px;
+    letter-spacing: 1px;
+    border-color: var(--rar);
+    box-shadow: none;
+  }
+  .store-menu .tab.active { background: var(--rar); color: #111; text-shadow: none; }
+  /* Inventory: wraps into rows and scrolls when there are more swords than fit */
+  #invItems {
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 800px;
+    max-height: calc(100vh - 150px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px;
+  }
   #invMsg { min-height: 1.2em; color: #ffd34d; font-size: 13px; }
   /* Shop and inventory share one row on the main menu */
   .menu-pair { display: flex; gap: 10px; width: 240px; }
   #mainMenu .menu-pair button { min-width: 0; flex: 1; padding: 10px 6px; font-size: 15px; }
   .card {
-    width: 180px;
+    box-sizing: border-box;
+    width: 178px;
     padding: 10px;
-    border: 3px solid #ff8a1f;
+    border: 3px solid var(--rar, #ff8a1f);
     border-radius: 12px;
     background: rgba(20, 12, 30, 0.7);
-    box-shadow: 0 0 12px rgba(255, 110, 20, 0.35);
+    box-shadow: 0 0 12px var(--rar-glow, rgba(255, 110, 20, 0.35));
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 4px;
   }
   .card.equipped { border-color: #ffd34d; box-shadow: 0 0 18px rgba(255, 211, 77, 0.7); }
-  .card canvas { width: 160px; height: 56px; }
-  .card .name { color: #fff; font: bold 14px "Courier New", monospace; text-shadow: 0 1px 2px #000; }
+  .card canvas { width: 100%; height: auto; }
+  .card .name {
+    color: #fff;
+    font: bold 12px "Courier New", monospace;
+    line-height: 1.15;
+    min-height: 2.3em;               /* two lines, so every card is the same height */
+    display: flex;
+    align-items: center;
+    text-align: center;
+    text-shadow: 0 1px 2px #000;
+  }
   .card .tag { font: bold 11px "Courier New", monospace; letter-spacing: 3px; }
   .store-menu .card button { min-width: 0; width: 100%; padding: 6px 8px; font-size: 15px; }
   .store-menu .card button.cant,
@@ -304,17 +335,81 @@ function high(diff) { return highScores[diff] || 0; }
 let totalGold = Number(localStorage.getItem("stickgo-gold") || 0);
 
 // --- Sword skins (cosmetic only: every sword has the same reach) ---
-// The shop groups skins by rarity; only common ones exist so far.
+// The shop groups skins by rarity. How a skin is drawn (see drawBlade):
+//   blade = fill colour (null = day/night palette), tip = colour the blade fades to,
+//   edge = outline, hi = highlight ridge, guard = crossguard and grip, gem = jewel on the guard,
+//   shape = blade outline from PROFILES, curve = sabre-like bend, glow = soft halo,
+//   fx = animated effect (see swordFx) in fxColor, hilt = visible handle, wing = winged guard.
+// legacy skins stay in the inventory of people who bought them but are no longer sold.
 const RARITIES = {
-  common: { label: "COMMON", color: "#c9c9c9" }
+  common:    { label: "COMMON",    color: "#7ed957", glow: "rgba(126, 217, 87, 0.40)" },
+  uncommon:  { label: "UNCOMMON",  color: "#4aa8ff", glow: "rgba(74, 168, 255, 0.45)" },
+  rare:      { label: "RARE",      color: "#b266ff", glow: "rgba(178, 102, 255, 0.50)" },
+  legendary: { label: "LEGENDARY", color: "#ffa930", glow: "rgba(255, 169, 48, 0.60)" }
 };
-// blade/guard null = use the day/night palette. curve bends the blade like a sabre.
 const SWORD_SKINS = {
   starter: { name: "STARTER SWORD", rarity: null, price: 0, blade: null, guard: null, len: 26, width: 3 },
-  wooden:  { name: "WOODEN SWORD", rarity: "common", price: 25, blade: "#8b5a2b", guard: "#4a2e14", len: 24, width: 5 },
-  bronze:  { name: "BRONZE SWORD", rarity: "common", price: 40, blade: "#e3ac3f", guard: "#5a3a12", len: 27, width: 3.5 },
-  sabre:   { name: "RUSTY SABRE",  rarity: "common", price: 60, blade: "#b5522e", guard: "#3d3d3d", len: 30, width: 3, curve: 0.18 }
+
+  // Common
+  wooden:  { name: "TRAINING WOODEN BOKKEN", rarity: "common", price: 25,
+             blade: "#a8743d", edge: "#4a2e14", hi: "#c99358", guard: "#5a3a1a",
+             len: 30, width: 4.4, shape: "bokken" },
+  sabre:   { name: "RUSTY CUTLASS", rarity: "common", price: 60,
+             blade: "#a5a8a6", edge: "#4a4d4f", hi: "#d6d9d8", guard: "#5b3a22",
+             len: 30, width: 4.4, shape: "saber", curve: 0.16, fx: "rust", fxColor: "#a8522a" },
+  cleaver: { name: "SCRAP METAL CLEAVER", rarity: "common", price: 90,
+             blade: "#9aa0a3", edge: "#3f4446", hi: "#cfd4d6", guard: "#cdbb8a",
+             len: 27, width: 9, shape: "cleaver", fx: "rust", fxColor: "#8a6a3a" },
+  oldguard: { name: "OLD GUARD'S SABER", rarity: "common", price: 120,
+             blade: "#cfd4d8", edge: "#5d646a", hi: "#ffffff", guard: "#b7842b",
+             len: 32, width: 4, shape: "saber", curve: 0.12 },
+  bronze:  { name: "BRONZE SWORD", rarity: "common", price: 40, legacy: true,
+             blade: "#e3ac3f", edge: "#6a4a12", guard: "#5a3a12", len: 27, width: 3.5 },
+
+  // Uncommon
+  spiketooth: { name: "SPIKE-TOOTH BLADE", rarity: "uncommon", price: 500,
+             blade: "#454c56", edge: "#111418", hi: "#8892a0", guard: "#2a2f36",
+             len: 32, width: 6.4, shape: "serrated" },
+  electro: { name: "ELECTRO-BATON SWORD", rarity: "uncommon", price: 750,
+             blade: "#a9c4d6", edge: "#2f5878", hi: "#f2fbff", guard: "#2d4a63",
+             len: 31, width: 4, shape: "blade", fx: "electric", fxColor: "#8fe9ff", glow: "#4fc3f7" },
+  obsidian: { name: "OBSIDIAN SHARD", rarity: "uncommon", price: 1000,
+             blade: "#372a58", edge: "#6a50b4", hi: "#a583f0", guard: "#2a2048",
+             len: 30, width: 7.4, shape: "shard" },
+  jungle:  { name: "JUNGLE MACHETE", rarity: "uncommon", price: 1250,
+             blade: "#566b34", edge: "#1f2a10", hi: "#9fc45a", guard: "#4a3418",
+             len: 30, width: 7, shape: "machete", fx: "slime", fxColor: "#7ee04a" },
+
+  // Rare
+  crimson: { name: "CRIMSON FURY", rarity: "rare", price: 15000,
+             blade: "#c4162d", edge: "#3d050d", hi: "#ff7a66", guard: "#3a0a10",
+             len: 33, width: 6.4, shape: "flame", fx: "flame", fxColor: "#ff5a2a", glow: "#ff2a2a" },
+  shadow:  { name: "SHADOW EDGE", rarity: "rare", price: 18000,
+             blade: "#1c1430", edge: "#05030a", hi: "#7a4fd0", guard: "#120b20",
+             len: 33, width: 6.4, shape: "flame", fx: "wisps", fxColor: "#8a5cf0", glow: "#7a3fe0" },
+  aero:    { name: "AERO-SABER", rarity: "rare", price: 22000,
+             blade: "#dff6fb", edge: "#6fb4c8", hi: "#ffffff", guard: "#5d8fa0",
+             len: 33, width: 5, shape: "saber", curve: 0.2, fx: "wisps", fxColor: "#d8fbff", glow: "#8fe3ff" },
+  frostbite: { name: "FROSTBITE", rarity: "rare", price: 25000,
+             blade: "#a8e0ff", edge: "#3a82b4", hi: "#f2fcff", guard: "#2c5f8a",
+             len: 32, width: 7.4, shape: "ice", fx: "sparkle", fxColor: "#ffffff", glow: "#6fd0ff" },
+
+  // Legendary
+  dragon:  { name: "DRAGON'S BREATH", rarity: "legendary", price: 100000,
+             blade: "#7a1a0a", tip: "#ffb02e", edge: "#2a0803", hi: "#ffd36a", guard: "#3a2a1c",
+             len: 34, width: 8.4, shape: "broad", fx: "flame", fxColor: "#ff8a1f", glow: "#ff6a00", gem: "#ff3b1f" },
+  laser:   { name: "CYBERNETIC LASER BLADE", rarity: "legendary", price: 100000,
+             blade: "#7ff4ff", guard: "#46505e", len: 34, width: 3.6, shape: "laser",
+             fx: "laser", fxColor: "#27d7ff", glow: "#27d7ff", gem: "#27d7ff", hilt: true },
+  voidbringer: { name: "VOID BRINGER", rarity: "legendary", price: 100000,
+             blade: "#2a0f4d", tip: "#6b2fd6", edge: "#080214", hi: "#b27bff", guard: "#1a0a30",
+             len: 34, width: 8, shape: "broad", fx: "void", fxColor: "#c490ff", glow: "#8a3dff", gem: "#c490ff" },
+  sun:     { name: "CELESTIAL SUN-BLADE", rarity: "legendary", price: 100000,
+             blade: "#ffd34d", tip: "#fffbe0", edge: "#a8740a", hi: "#ffffff", guard: "#e0a82a",
+             len: 34, width: 6, shape: "blade", fx: "sparkle", fxColor: "#fff3a8", glow: "#ffd34d",
+             gem: "#ff7a2a", wing: true }
 };
+const fmt = (n) => n.toLocaleString("en-US");
 const skinState = Object.assign(
   { owned: ["starter"], equipped: "starter" },
   JSON.parse(localStorage.getItem("stickgo-skins") || "{}")
@@ -409,11 +504,12 @@ function showMenu(name) {
   if (name === "main") {
     document.getElementById("highText").textContent =
       `HIGH SCORE ${pad5(high(settings.difficulty))} (${DIFFICULTIES[settings.difficulty].label})`;
-    document.getElementById("goldText").textContent = `GOLD ${totalGold}`;
+    document.getElementById("goldText").textContent = `GOLD ${fmt(totalGold)}`;
   }
   if (name === "settings") refreshSettingsLabels();
   if (name === "shop") { shopMessage(""); refreshShop(); }
   if (name === "inventory") { invMessage(""); refreshInventory(); }
+  animatePreviews();
 }
 
 function refreshSettingsLabels() {
@@ -506,46 +602,72 @@ document.querySelectorAll(".menu button").forEach((b) => {
 });
 
 // --- Shop ---
-const shopCards = {};  // skin id -> card element
+let shopTab = "common";   // which rarity tab is showing
+let previewTimer = null;
 
-// Builds one section per rarity, each with a card per skin
-function buildShop() {
-  const sections = document.getElementById("shopSections");
-  for (const [rarity, info] of Object.entries(RARITIES)) {
-    const head = document.createElement("div");
-    head.className = "rarity-head";
-    head.style.color = info.color;
-    head.textContent = `— ${info.label} —`;
-    const row = document.createElement("div");
-    row.className = "shop-row";
-    for (const [id, skin] of Object.entries(SWORD_SKINS)) {
-      if (skin.rarity !== rarity) continue;
-      const card = document.createElement("div");
-      card.className = "card";
-      card.innerHTML = `<canvas width="320" height="112"></canvas>
-        <div class="name">${skin.name}</div>
-        <div class="tag" style="color:${info.color}">${info.label}</div>
-        <button></button>`;
-      card.querySelector("button").addEventListener("click", () => shopTap(id));
-      row.appendChild(card);
-      shopCards[id] = card;
-    }
-    sections.append(head, row);
+// A card with the sword picture, name and rarity. The caller adds the button's text and action.
+function swordCard(id) {
+  const skin = SWORD_SKINS[id];
+  const info = RARITIES[skin.rarity] || { label: "STARTER", color: "#ffffff" };
+  const card = document.createElement("div");
+  card.className = "card";
+  if (RARITIES[skin.rarity]) {
+    card.style.setProperty("--rar", info.color);
+    card.style.setProperty("--rar-glow", info.glow);
   }
-  sections.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:8px";
+  card.innerHTML = `<canvas width="320" height="128"></canvas>
+    <div class="name">${skin.name}</div>
+    <div class="tag" style="color:${info.color}">${info.label}</div>
+    <button></button>`;
+  const canvas = card.querySelector("canvas");
+  if (skin.fx || skin.glow) canvas.dataset.anim = id;   // animated while the menu is open
+  drawSwordPreview(canvas, skin);
+  return card;
 }
 
+// Keeps the glowing, sparking swords moving while the shop or inventory is open
+function animatePreviews() {
+  const open = menus.shop.classList.contains("open") || menus.inventory.classList.contains("open");
+  if (!open) { clearInterval(previewTimer); previewTimer = null; return; }
+  if (previewTimer) return;
+  previewTimer = setInterval(() => {
+    for (const c of document.querySelectorAll("canvas[data-anim]")) {
+      drawSwordPreview(c, SWORD_SKINS[c.dataset.anim]);
+    }
+  }, 70);
+}
+
+// One tab per rarity, and below it that rarity's swords
 function refreshShop() {
-  document.getElementById("shopGold").innerHTML = `<span class="coin"></span>${totalGold}`;
-  for (const [id, card] of Object.entries(shopCards)) {
-    const skin = SWORD_SKINS[id];
+  document.getElementById("shopGold").innerHTML = `<span class="coin"></span>${fmt(totalGold)}`;
+  const sections = document.getElementById("shopSections");
+  sections.innerHTML = "";
+
+  const tabs = document.createElement("div");
+  tabs.className = "tabs";
+  for (const [rarity, info] of Object.entries(RARITIES)) {
+    const tab = document.createElement("button");
+    tab.className = "tab" + (rarity === shopTab ? " active" : "");
+    tab.style.setProperty("--rar", info.color);
+    tab.textContent = info.label;
+    tab.addEventListener("click", () => { shopTab = rarity; refreshShop(); });
+    tabs.appendChild(tab);
+  }
+
+  const row = document.createElement("div");
+  row.className = "shop-row";
+  for (const [id, skin] of Object.entries(SWORD_SKINS)) {
+    if (skin.rarity !== shopTab || skin.legacy) continue;
     const owned = skinState.owned.includes(id);
+    const card = swordCard(id);
     const btn = card.querySelector("button");
-    btn.innerHTML = owned ? "OWNED" : `<span class="coin"></span>${skin.price}`;
+    btn.innerHTML = owned ? "OWNED" : `<span class="coin"></span>${fmt(skin.price)}`;
     btn.classList.toggle("owned", owned);
     btn.classList.toggle("cant", !owned && totalGold < skin.price);
-    drawSwordPreview(card.querySelector("canvas"), skin);
+    btn.addEventListener("click", () => shopTap(id));
+    row.appendChild(card);
   }
+  sections.append(tabs, row);
 }
 
 function shopMessage(text) { document.getElementById("shopMsg").textContent = text; }
@@ -563,7 +685,7 @@ function shopTap(id) {
     shopMessage(`BOUGHT ${skin.name}! EQUIP IT FROM YOUR INVENTORY`);
     sfx.coin();
   } else {
-    shopMessage(`NOT ENOUGH GOLD — NEED ${skin.price - totalGold} MORE`);
+    shopMessage(`NOT ENOUGH GOLD — NEED ${fmt(skin.price - totalGold)} MORE`);
     return;
   }
   saveSkins();
@@ -571,23 +693,21 @@ function shopTap(id) {
 }
 
 // --- Inventory ---
-// Every owned sword (starter included) with an EQUIP button; shop order is kept.
+// Every owned sword (starter first, then by rarity) with an EQUIP button.
 function refreshInventory() {
   const row = document.getElementById("invItems");
   row.innerHTML = "";
-  for (const [id, skin] of Object.entries(SWORD_SKINS)) {
-    if (!skinState.owned.includes(id)) continue;
-    const info = RARITIES[skin.rarity] || { label: "STARTER", color: "#ffffff" };
-    const equipped = skinState.equipped === id;
-    const card = document.createElement("div");
-    card.className = "card" + (equipped ? " equipped" : "");
-    card.innerHTML = `<canvas width="320" height="112"></canvas>
-      <div class="name">${skin.name}</div>
-      <div class="tag" style="color:${info.color}">${info.label}</div>
-      <button>${equipped ? "EQUIPPED" : "EQUIP"}</button>`;
-    card.querySelector("button").addEventListener("click", () => equipSkin(id));
-    row.appendChild(card);
-    drawSwordPreview(card.querySelector("canvas"), skin);
+  for (const rarity of [null, ...Object.keys(RARITIES)]) {
+    for (const [id, skin] of Object.entries(SWORD_SKINS)) {
+      if (skin.rarity !== rarity || !skinState.owned.includes(id)) continue;
+      const equipped = skinState.equipped === id;
+      const card = swordCard(id);
+      card.classList.toggle("equipped", equipped);
+      const btn = card.querySelector("button");
+      btn.textContent = equipped ? "EQUIPPED" : "EQUIP";
+      btn.addEventListener("click", () => equipSkin(id));
+      row.appendChild(card);
+    }
   }
   if (skinState.owned.length < 2) invMessage("BUY MORE SWORDS IN THE SHOP");
 }
@@ -1140,7 +1260,7 @@ function gameOver() {
   document.getElementById("overText").textContent =
     `SCORE ${pad5(score)}   HIGH ${pad5(high(runDiff))} (${DIFFICULTIES[runDiff].label})`;
   document.getElementById("overGold").textContent =
-    `WAVE ${wave}   GOLD +${runGold}   TOTAL ${totalGold}`;
+    `WAVE ${wave}   GOLD +${runGold}   TOTAL ${fmt(totalGold)}`;
   showMenu("over");
 }
 
@@ -1442,7 +1562,7 @@ function drawSword(pts, swinging) {
     const now = Math.PI / 2 - tipAngle;         // limb() angle -> canvas arc angle
     const from = Math.max(Math.PI / 2 - (SWING_FROM + 0.15), now - 1.4);
     ctx.globalAlpha = 0.35;
-    ctx.strokeStyle = skin.blade || colors.blade;
+    ctx.strokeStyle = skin.glow || skin.blade || colors.blade;
     ctx.lineWidth = 7;
     ctx.beginPath(); ctx.arc(sh.x, sh.y, r, from, now); ctx.stroke();
     ctx.globalAlpha = 1;
@@ -1450,31 +1570,226 @@ function drawSword(pts, swinging) {
   drawBlade(ctx, hand, angle, skin);
 }
 
+// --- Sword drawing ---
+// Blade outlines. Each returns how far the top and bottom edges stick out (1 = half the
+// skin's width) at t along the blade: 0 at the guard, 1 at the tip.
+const table = (pts) => (t) => {
+  for (let i = 1; i < pts.length; i++) {
+    if (t <= pts[i][0]) {
+      const [t0, a0, b0] = pts[i - 1], [t1, a1, b1] = pts[i];
+      const f = (t - t0) / (t1 - t0 || 1);
+      return [a0 + (a1 - a0) * f, b0 + (b1 - b0) * f];
+    }
+  }
+  const last = pts[pts.length - 1];
+  return [last[1], last[2]];
+};
+const PROFILES = {
+  blade:    table([[0, 1, 1], [0.8, 1, 1], [1, 0, 0]]),
+  bokken:   table([[0, 0.9, 0.9], [0.94, 1, 1], [1, 0, 0]]),
+  saber:    table([[0, 1, 1], [0.7, 1, 1], [1, 0, 0]]),
+  cleaver:  table([[0, 0.55, 0.55], [0.1, 1, 1], [0.94, 1, 0.92], [1, 0.9, 0.15]]),
+  machete:  table([[0, 0.5, 0.5], [0.25, 0.6, 0.6], [0.8, 1, 1], [0.93, 1, 0.9], [1, 0, 0]]),
+  broad:    table([[0, 0.6, 0.6], [0.1, 1, 1], [0.85, 1, 1], [1, 0, 0]]),
+  shard:    table([[0, 0.5, 0.5], [0.12, 1, 0.7], [0.3, 0.75, 1], [0.5, 1, 0.8],
+                   [0.7, 0.7, 0.95], [0.88, 0.55, 0.4], [1, 0, 0]]),
+  ice:      table([[0, 0.6, 0.6], [0.1, 1, 0.9], [0.28, 0.7, 1], [0.45, 1, 0.75],
+                   [0.62, 0.7, 0.95], [0.8, 0.8, 0.5], [1, 0, 0]]),
+  laser:    table([[0, 1, 1], [0.96, 1, 1], [1, 0.3, 0.3]]),
+  // Saw teeth along the top edge
+  serrated: (t) => {
+    const k = Math.min(1, (1 - t) / 0.12), f = (t * 6) % 1;
+    return [k * (0.8 + 0.5 * f), k * 0.8];
+  },
+  // Wavy, like a flame
+  flame: (t) => {
+    const k = Math.min(1, (1 - t) / 0.15);
+    return [k * (0.8 + 0.25 * Math.sin(t * 14)), k * (0.8 + 0.25 * Math.sin(t * 14 + 2))];
+  }
+};
+const SWORD_START = 4;  // the blade starts this far from the hand, where the guard sits
+
+function rnd(n) { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+// Animated effects around the blade. at(t, v) = a point t along the blade, v to the side.
+function swordFx(g, skin, clock, at, w) {
+  g.save();
+  g.strokeStyle = g.fillStyle = skin.fxColor || "#ffffff";
+  switch (skin.fx) {
+    case "electric": {
+      const seed = Math.floor(clock * 16);
+      g.lineWidth = 0.5;
+      for (let k = 0; k < 2; k++) {
+        g.beginPath();
+        for (let i = 0; i <= 10; i++) {
+          const p = at(0.06 + 0.9 * i / 10, (rnd(seed * 7 + i + k * 31) - 0.5) * w * 1.7);
+          i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y);
+        }
+        g.stroke();
+      }
+      break;
+    }
+    case "flame":
+      for (let i = 0; i < 7; i++) {
+        const t = 0.1 + 0.8 * i / 6;
+        const h = 0.5 + 0.5 * Math.sin(clock * 9 + i * 2.1);
+        const l = at(t - 0.03, w * 0.3), r = at(t + 0.05, w * 0.3);
+        const apex = at(t + 0.035, w * 0.5 + 1.4 + 2.4 * h);
+        g.globalAlpha = 0.85;
+        g.beginPath(); g.moveTo(l.x, l.y); g.lineTo(apex.x, apex.y); g.lineTo(r.x, r.y); g.fill();
+      }
+      for (let i = 0; i < 4; i++) {   // embers drifting up
+        const f = (clock * 0.9 + i * 0.27) % 1;
+        const p = at(0.2 + 0.2 * i, w * 0.5 + 3 + 6 * f);
+        g.globalAlpha = 1 - f;
+        g.beginPath(); g.arc(p.x, p.y, 0.5, 0, Math.PI * 2); g.fill();
+      }
+      break;
+    case "slime":
+      g.lineWidth = 0.9;
+      for (let i = 0; i < 3; i++) {
+        const drop = 1.2 + 0.8 * (0.5 + 0.5 * Math.sin(clock * 2 + i * 2));
+        const a = at(0.3 + 0.25 * i, -w * 0.45), b = at(0.3 + 0.25 * i, -w * 0.45 - drop);
+        g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+        g.beginPath(); g.arc(b.x, b.y, 0.9, 0, Math.PI * 2); g.fill();
+      }
+      break;
+    case "wisps":
+      g.lineWidth = 0.45;
+      g.globalAlpha = 0.6;
+      for (let k = 0; k < 3; k++) {
+        g.beginPath();
+        for (let i = 0; i <= 14; i++) {
+          const t = 0.05 + 0.95 * i / 14;
+          const p = at(t, (k - 1) * w * 0.9 + 1.3 * Math.sin(t * 9 - clock * 7 + k * 2.1));
+          i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y);
+        }
+        g.stroke();
+      }
+      break;
+    case "sparkle":
+      g.lineWidth = 0.4;
+      for (let i = 0; i < 5; i++) {
+        const s = Math.max(0, Math.sin(clock * 4 + i * 1.9)) * 1.5;
+        if (s < 0.1) continue;
+        const side = rnd(i + 9) > 0.5 ? 1 : -1;
+        const p = at(0.15 + 0.8 * rnd(i + 3), side * (w * 0.4 + 1.2));
+        g.beginPath();
+        g.moveTo(p.x - s, p.y); g.lineTo(p.x + s, p.y);
+        g.moveTo(p.x, p.y - s); g.lineTo(p.x, p.y + s);
+        g.stroke();
+      }
+      break;
+    case "void":
+      for (let i = 0; i < 6; i++) {
+        const p = at(((i / 6) + clock * 0.2) % 1, Math.sin(clock * 3 + i * 1.3) * w * 0.7);
+        g.globalAlpha = 0.5 + 0.5 * Math.sin(clock * 4 + i);
+        g.beginPath(); g.arc(p.x, p.y, 0.6, 0, Math.PI * 2); g.fill();
+      }
+      break;
+    case "rust":
+      g.globalAlpha = 0.8;
+      for (const [t, v, r] of [[0.3, 0.2, 0.9], [0.55, -0.4, 0.7], [0.75, 0.3, 0.6]]) {
+        const p = at(t, v);
+        g.beginPath(); g.arc(p.x, p.y, r, 0, Math.PI * 2); g.fill();
+      }
+      break;
+    case "laser": {
+      g.globalAlpha = 0.85 + 0.15 * Math.sin(clock * 40);
+      g.strokeStyle = "#ffffff";
+      g.lineWidth = skin.width * 0.38;
+      const a = at(0.02, 0), b = at(0.97, 0);
+      g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+      break;
+    }
+  }
+  g.restore();
+}
+
 // Draws a sword skin held at `hand`, pointing along `angle` (limb() convention).
 // Also used by the shop previews, which pass their own canvas context.
-function drawBlade(g, hand, angle, skin) {
-  const tip = limb(hand, angle, skin.len);
-  const guard = limb(hand, angle, 4);
-  const side = { x: Math.cos(angle), y: -Math.sin(angle) };  // across the blade
+function drawBlade(g, hand, angle, skin, clock = performance.now() / 1000) {
+  const S = SWORD_START, L = skin.len - S, w = skin.width;
+  const profile = PROFILES[skin.shape || "blade"];
+  const bend = (skin.curve || 0) * skin.len;
+  // Point on the blade: t runs from the guard (0) to the tip (1), v is the offset to the side
+  const at = (t, v = 0) => ({ x: S + L * t, y: 2 * t * (1 - t) * bend + v });
+
+  const N = 28, top = [], bot = [];
+  for (let i = 0; i <= N; i++) {
+    const t = i / N, [a, b] = profile(t);
+    top.push(at(t, a * w / 2));
+    bot.push(at(t, -b * w / 2));
+  }
+  const outline = () => {
+    g.beginPath();
+    top.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)));
+    for (let i = N; i >= 0; i--) g.lineTo(bot[i].x, bot[i].y);
+    g.closePath();
+  };
+
+  g.save();
+  g.translate(hand.x, hand.y);
+  // From here x runs along the blade and y across it
+  g.transform(Math.sin(angle), Math.cos(angle), Math.cos(angle), -Math.sin(angle), 0, 0);
   g.lineCap = "round";
-  g.strokeStyle = skin.blade || colors.blade;
-  g.lineWidth = skin.width;
+  g.lineJoin = "round";
+
+  if (skin.glow) {
+    const pulse = 0.8 + 0.2 * Math.sin(clock * 5);
+    g.strokeStyle = skin.glow;
+    outline();
+    g.globalAlpha = 0.18 * pulse; g.lineWidth = 4.5; g.stroke();
+    g.globalAlpha = 0.3 * pulse; g.lineWidth = 2.2; g.stroke();
+    g.globalAlpha = 1;
+  }
+
+  let fill = skin.blade || colors.blade;
+  if (skin.tip) {
+    const grad = g.createLinearGradient(S, 0, S + L, 0);
+    grad.addColorStop(0, fill);
+    grad.addColorStop(1, skin.tip);
+    fill = grad;
+  }
+  g.fillStyle = fill;
+  outline();
+  g.fill();
+  if (skin.edge) { g.strokeStyle = skin.edge; g.lineWidth = 0.7; g.stroke(); }
+
+  if (skin.hi) {   // light ridge down the middle
+    g.strokeStyle = skin.hi;
+    g.globalAlpha = 0.75;
+    g.lineWidth = Math.max(0.5, w * 0.16);
+    g.beginPath();
+    for (let i = 0; i <= 8; i++) {
+      const p = at(0.1 + 0.72 * i / 8);
+      i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y);
+    }
+    g.stroke();
+    g.globalAlpha = 1;
+  }
+
+  if (skin.fx) swordFx(g, skin, clock, at, w);
+
+  g.strokeStyle = skin.guard || colors.ink;
+  if (skin.hilt) {
+    g.lineWidth = 3;
+    g.beginPath(); g.moveTo(-3, 0); g.lineTo(S + 1, 0); g.stroke();
+  }
   g.beginPath();
-  g.moveTo(guard.x, guard.y);
-  if (skin.curve) {
-    const mid = limb(guard, angle, (skin.len - 4) / 2);
-    const bend = skin.curve * skin.len;
-    g.quadraticCurveTo(mid.x + side.x * bend, mid.y + side.y * bend, tip.x, tip.y);
+  if (skin.wing) {
+    g.lineWidth = 1.8;
+    for (const s of [1, -1]) { g.moveTo(S, 0); g.quadraticCurveTo(S - 1, s * 4, S + 3, s * 7.5); }
   } else {
-    g.lineTo(tip.x, tip.y);
+    g.lineWidth = 3;
+    g.moveTo(S, -5); g.lineTo(S, 5);
   }
   g.stroke();
-  g.strokeStyle = skin.guard || colors.ink;
-  g.lineWidth = 3;
-  g.beginPath();
-  g.moveTo(guard.x - side.x * 5, guard.y - side.y * 5);
-  g.lineTo(guard.x + side.x * 5, guard.y + side.y * 5);
-  g.stroke();
+  if (skin.gem) {
+    g.fillStyle = skin.gem;
+    g.beginPath(); g.arc(S, 0, 1.2, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
 }
 
 // Shop card picture: the sword lying almost flat, with a short handle
@@ -1482,10 +1797,10 @@ function drawSwordPreview(canvas, skin) {
   const g = canvas.getContext("2d");
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, canvas.width, canvas.height);
-  const scale = canvas.width / 44;  // 44 game units across, ~15 down
+  const scale = canvas.width / 44;  // 44 game units across, ~17 down
   g.setTransform(scale, 0, 0, scale, 0, 0);
-  const angle = 1.75;  // pointing right and slightly up
-  const hand = { x: 7, y: 11 };
+  const angle = 1.64;  // pointing right, a touch upwards
+  const hand = { x: 7, y: 9 };
   g.lineCap = "round";
   g.strokeStyle = skin.guard || "#8a8a8a";
   g.lineWidth = 3;
@@ -1783,7 +2098,6 @@ function loop(time) {
 
 reset();
 refreshSettingsLabels();
-buildShop();
 showMenu("main");
 requestAnimationFrame(loop);
 </script>
