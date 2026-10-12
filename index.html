@@ -19,7 +19,7 @@
     -webkit-user-select: none;
     touch-action: manipulation;
   }
-  canvas {
+  #game {
     /* Keep the 3:1 shape and fill as much of the screen as possible */
     width: min(100vw, 300vh);
     height: min(100vh, 33.333vw);
@@ -111,18 +111,65 @@
     padding: 0 0 9vh 6vw;
     box-sizing: border-box;
   }
-  #mainMenu button {
+  #mainMenu button, #shopMenu button {
     color: #fff;
     background: rgba(20, 12, 30, 0.6);
     border-color: #ff8a1f;
     box-shadow: 0 0 12px rgba(255, 110, 20, 0.45);
     text-shadow: 0 1px 2px #000;
   }
-  #mainMenu button:active { background: rgba(255, 120, 30, 0.55); }
-  #mainMenu p {
+  #mainMenu button:active, #shopMenu button:active { background: rgba(255, 120, 30, 0.55); }
+  #mainMenu p, #shopMenu p {
     color: #fff;
     text-shadow: 0 1px 3px #000, 0 0 6px #000;
   }
+
+  /* Shop: same artwork as the main menu, dimmed so the cards stand out */
+  #shopMenu {
+    background: linear-gradient(rgba(12, 8, 24, 0.62), rgba(12, 8, 24, 0.62)),
+                #1a1430 url("pictures/mainmenu.jpg") center 25% / cover no-repeat;
+    gap: 8px;
+  }
+  #shopMenu h1 { color: #fff; font-size: 28px; margin: 0; text-shadow: 0 2px 4px #000; }
+  .shop-head { display: flex; align-items: baseline; gap: 28px; }
+  #shopGold { color: #ffd34d; font: bold 20px "Courier New", monospace; text-shadow: 0 1px 3px #000; }
+  .coin {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: #f5b921;
+    border: 2px solid #a8740a;
+    vertical-align: -1px;
+  }
+  .rarity-head {
+    font: bold 13px "Courier New", monospace;
+    letter-spacing: 4px;
+    text-shadow: 0 1px 3px #000;
+  }
+  .shop-row { display: flex; gap: 14px; }
+  .card {
+    width: 180px;
+    padding: 10px;
+    border: 3px solid #ff8a1f;
+    border-radius: 12px;
+    background: rgba(20, 12, 30, 0.7);
+    box-shadow: 0 0 12px rgba(255, 110, 20, 0.35);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .card.equipped { border-color: #ffd34d; box-shadow: 0 0 18px rgba(255, 211, 77, 0.7); }
+  .card canvas { width: 160px; height: 56px; }
+  .card .name { color: #fff; font: bold 14px "Courier New", monospace; text-shadow: 0 1px 2px #000; }
+  .card .tag { font: bold 11px "Courier New", monospace; letter-spacing: 3px; }
+  #shopMenu .card button { min-width: 0; width: 100%; padding: 6px 8px; font-size: 15px; }
+  #shopMenu .card button.cant { opacity: 0.55; }
+  #shopMsg { min-height: 1.2em; color: #ffd34d; font-size: 13px; }
+  .shop-foot { display: flex; gap: 12px; }
+  #shopMenu .shop-foot button { min-width: 0; padding: 8px 18px; font-size: 15px; }
 </style>
 </head>
 <body>
@@ -134,10 +181,21 @@
 
 <div class="menu" id="mainMenu">
   <button data-action="play">PLAY</button>
+  <button data-action="shop">SHOP</button>
   <button data-action="settings">SETTINGS</button>
   <p id="highText"></p>
   <p id="goldText"></p>
   <p>Jump: JUMP / SPACE &nbsp; Duck: hold DUCK / DOWN &nbsp; Attack: ATTACK / X</p>
+</div>
+
+<div class="menu" id="shopMenu">
+  <div class="shop-head"><h1>SHOP</h1><span id="shopGold"></span></div>
+  <div id="shopSections"></div>
+  <p id="shopMsg"></p>
+  <div class="shop-foot">
+    <button data-action="starter" id="starterBtn"></button>
+    <button data-action="shopBack">BACK</button>
+  </div>
 </div>
 
 <div class="menu" id="pauseMenu">
@@ -193,7 +251,6 @@ const JUMP_BUFFER = 0.1;     // s a jump press is remembered while still in the 
 const PHYSICS_STEP = 1 / 120;
 const ATTACK_DURATION = 0.25;  // s a sword swing lasts (and can hit for)
 const ATTACK_COOLDOWN = 0.1;   // s after a swing before the next one
-const SWORD_LEN = 26;
 
 // Speeds in px/s; gain is px/s added per second
 const DIFFICULTIES = {
@@ -229,6 +286,25 @@ function high(diff) { return highScores[diff] || 0; }
 
 // Gold dropped by enemies; the total is kept across runs
 let totalGold = Number(localStorage.getItem("stickgo-gold") || 0);
+
+// --- Sword skins (cosmetic only: every sword has the same reach) ---
+// The shop groups skins by rarity; only common ones exist so far.
+const RARITIES = {
+  common: { label: "COMMON", color: "#c9c9c9" }
+};
+// blade/guard null = use the day/night palette. curve bends the blade like a sabre.
+const SWORD_SKINS = {
+  starter: { name: "STARTER SWORD", rarity: null, price: 0, blade: null, guard: null, len: 26, width: 3 },
+  wooden:  { name: "WOODEN SWORD", rarity: "common", price: 25, blade: "#8b5a2b", guard: "#4a2e14", len: 24, width: 5 },
+  bronze:  { name: "BRONZE SWORD", rarity: "common", price: 40, blade: "#e3ac3f", guard: "#5a3a12", len: 27, width: 3.5 },
+  sabre:   { name: "RUSTY SABRE",  rarity: "common", price: 60, blade: "#b5522e", guard: "#3d3d3d", len: 30, width: 3, curve: 0.18 }
+};
+const skinState = Object.assign(
+  { owned: ["starter"], equipped: "starter" },
+  JSON.parse(localStorage.getItem("stickgo-skins") || "{}")
+);
+function saveSkins() { localStorage.setItem("stickgo-skins", JSON.stringify(skinState)); }
+function equippedSkin() { return SWORD_SKINS[skinState.equipped] || SWORD_SKINS.starter; }
 
 // --- Game state ---
 let state = "ready";         // "ready" | "running" | "paused" | "dying" | "over"
@@ -303,7 +379,8 @@ const menus = {
   main: document.getElementById("mainMenu"),
   pause: document.getElementById("pauseMenu"),
   settings: document.getElementById("settingsMenu"),
-  over: document.getElementById("overMenu")
+  over: document.getElementById("overMenu"),
+  shop: document.getElementById("shopMenu")
 };
 let settingsReturnTo = "main";   // which menu BACK returns to
 let resetArmed = false;          // reset high score needs a second tap
@@ -317,6 +394,7 @@ function showMenu(name) {
     document.getElementById("goldText").textContent = `GOLD ${totalGold}`;
   }
   if (name === "settings") refreshSettingsLabels();
+  if (name === "shop") { shopMessage(""); refreshShop(); }
 }
 
 function refreshSettingsLabels() {
@@ -369,6 +447,9 @@ function openSettings(from) {
 
 const menuActions = {
   play: startGame,
+  shop: () => showMenu("shop"),
+  shopBack: () => showMenu("main"),
+  starter: () => shopTap("starter"),
   resume: resumeGame,
   main: goToMainMenu,
   settings: () => openSettings(state === "paused" ? "pause" : "main"),
@@ -404,11 +485,81 @@ document.querySelectorAll(".menu button").forEach((b) => {
   b.addEventListener("click", () => menuActions[b.dataset.action]());
 });
 
+// --- Shop ---
+const shopCards = {};  // skin id -> card element
+
+// Builds one section per rarity, each with a card per skin
+function buildShop() {
+  const sections = document.getElementById("shopSections");
+  for (const [rarity, info] of Object.entries(RARITIES)) {
+    const head = document.createElement("div");
+    head.className = "rarity-head";
+    head.style.color = info.color;
+    head.textContent = `— ${info.label} —`;
+    const row = document.createElement("div");
+    row.className = "shop-row";
+    for (const [id, skin] of Object.entries(SWORD_SKINS)) {
+      if (skin.rarity !== rarity) continue;
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `<canvas width="320" height="112"></canvas>
+        <div class="name">${skin.name}</div>
+        <div class="tag" style="color:${info.color}">${info.label}</div>
+        <button></button>`;
+      card.querySelector("button").addEventListener("click", () => shopTap(id));
+      row.appendChild(card);
+      shopCards[id] = card;
+    }
+    sections.append(head, row);
+  }
+  sections.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:8px";
+}
+
+function refreshShop() {
+  document.getElementById("shopGold").innerHTML = `<span class="coin"></span>${totalGold}`;
+  for (const [id, card] of Object.entries(shopCards)) {
+    const skin = SWORD_SKINS[id];
+    const owned = skinState.owned.includes(id);
+    const equipped = skinState.equipped === id;
+    const btn = card.querySelector("button");
+    btn.innerHTML = equipped ? "EQUIPPED" : owned ? "EQUIP" : `<span class="coin"></span>${skin.price}`;
+    btn.classList.toggle("cant", !owned && totalGold < skin.price);
+    card.classList.toggle("equipped", equipped);
+    drawSwordPreview(card.querySelector("canvas"), skin);
+  }
+  document.getElementById("starterBtn").textContent =
+    skinState.equipped === "starter" ? "STARTER SWORD: EQUIPPED" : "USE STARTER SWORD";
+}
+
+function shopMessage(text) { document.getElementById("shopMsg").textContent = text; }
+
+// Tapping a card: equip it if owned, otherwise buy it if there's enough gold
+function shopTap(id) {
+  const skin = SWORD_SKINS[id];
+  if (skinState.owned.includes(id)) {
+    skinState.equipped = id;
+    shopMessage(`${skin.name} EQUIPPED`);
+  } else if (totalGold >= skin.price) {
+    totalGold -= skin.price;
+    localStorage.setItem("stickgo-gold", totalGold);
+    skinState.owned.push(id);
+    skinState.equipped = id;
+    shopMessage(`BOUGHT ${skin.name}!`);
+    sfx.coin();
+  } else {
+    shopMessage(`NOT ENOUGH GOLD — NEED ${skin.price - totalGold} MORE`);
+    return;
+  }
+  saveSkins();
+  refreshShop();
+}
+
 // Called by the Android app when the phone's back button is pressed.
 // Returns true if the game handled it, false to let the app close.
 window.stickgoBack = function () {
   if (state === "dying") return true;
   if (state === "running") { pauseGame(); return true; }
+  if (menus.shop.classList.contains("open")) { showMenu("main"); return true; }
   if (menus.settings.classList.contains("open")) { showMenu(settingsReturnTo); return true; }
   if (state === "paused") { resumeGame(); return true; }
   if (state === "over") { goToMainMenu(); return true; }
@@ -1090,9 +1241,8 @@ function drawSword(pts, swinging) {
   const forearm = Math.atan2(hand.x - elbow.x, hand.y - elbow.y);
   // Held pointing up and forwards while running; in line with the arm mid-swing
   const angle = forearm + (swinging ? 0 : 0.9);
-  const tip = limb(hand, angle, SWORD_LEN);
-  const guard = limb(hand, angle, 4);
-  const side = { x: Math.cos(angle) * 5, y: -Math.sin(angle) * 5 };
+  const skin = equippedSkin();
+  const tip = limb(hand, angle, skin.len);
 
   if (swinging) {
     // Faint arc showing the path of the blade
@@ -1103,18 +1253,56 @@ function drawSword(pts, swinging) {
     const now = Math.PI / 2 - tipAngle;         // limb() angle -> canvas arc angle
     const from = Math.max(Math.PI / 2 - (SWING_FROM + 0.15), now - 1.4);
     ctx.globalAlpha = 0.35;
-    ctx.strokeStyle = colors.blade;
+    ctx.strokeStyle = skin.blade || colors.blade;
     ctx.lineWidth = 7;
     ctx.beginPath(); ctx.arc(sh.x, sh.y, r, from, now); ctx.stroke();
     ctx.globalAlpha = 1;
   }
-  ctx.lineCap = "round";
-  ctx.strokeStyle = colors.blade;
-  ctx.lineWidth = 3;
-  line(guard.x, guard.y, tip.x, tip.y);
-  ctx.strokeStyle = colors.ink;
-  ctx.lineWidth = 3;
-  line(guard.x - side.x, guard.y - side.y, guard.x + side.x, guard.y + side.y);
+  drawBlade(ctx, hand, angle, skin);
+}
+
+// Draws a sword skin held at `hand`, pointing along `angle` (limb() convention).
+// Also used by the shop previews, which pass their own canvas context.
+function drawBlade(g, hand, angle, skin) {
+  const tip = limb(hand, angle, skin.len);
+  const guard = limb(hand, angle, 4);
+  const side = { x: Math.cos(angle), y: -Math.sin(angle) };  // across the blade
+  g.lineCap = "round";
+  g.strokeStyle = skin.blade || colors.blade;
+  g.lineWidth = skin.width;
+  g.beginPath();
+  g.moveTo(guard.x, guard.y);
+  if (skin.curve) {
+    const mid = limb(guard, angle, (skin.len - 4) / 2);
+    const bend = skin.curve * skin.len;
+    g.quadraticCurveTo(mid.x + side.x * bend, mid.y + side.y * bend, tip.x, tip.y);
+  } else {
+    g.lineTo(tip.x, tip.y);
+  }
+  g.stroke();
+  g.strokeStyle = skin.guard || colors.ink;
+  g.lineWidth = 3;
+  g.beginPath();
+  g.moveTo(guard.x - side.x * 5, guard.y - side.y * 5);
+  g.lineTo(guard.x + side.x * 5, guard.y + side.y * 5);
+  g.stroke();
+}
+
+// Shop card picture: the sword lying almost flat, with a short handle
+function drawSwordPreview(canvas, skin) {
+  const g = canvas.getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, canvas.width, canvas.height);
+  const scale = canvas.width / 44;  // 44 game units across, ~15 down
+  g.setTransform(scale, 0, 0, scale, 0, 0);
+  const angle = 1.75;  // pointing right and slightly up
+  const hand = { x: 7, y: 11 };
+  g.lineCap = "round";
+  g.strokeStyle = skin.guard || "#8a8a8a";
+  g.lineWidth = 3;
+  const butt = limb(hand, angle, -3);
+  g.beginPath(); g.moveTo(butt.x, butt.y); g.lineTo(hand.x, hand.y); g.stroke();
+  drawBlade(g, hand, angle, skin.blade ? skin : { ...skin, blade: "#9fb0c2", guard: "#cfcfcf" });
 }
 
 function drawStickman() {
@@ -1310,6 +1498,7 @@ function loop(time) {
 
 reset();
 refreshSettingsLabels();
+buildShop();
 showMenu("main");
 requestAnimationFrame(loop);
 </script>
