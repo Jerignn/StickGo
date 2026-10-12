@@ -242,6 +242,8 @@ let corpses = [];            // ragdolls of slain enemies
 let runGold = 0;
 let bonusScore = 0;          // points from jumping over enemies and drones
 let popups = [];             // floating "+10" texts
+let wave = 1;
+let waveBanner = 0;          // time left showing the "WAVE n" banner
 const JUMP_OVER_BONUS = 10;
 
 const player = {
@@ -280,6 +282,8 @@ function reset() {
   runGold = 0;
   bonusScore = 0;
   popups = [];
+  wave = 1;
+  waveBanner = 0;
   ragdoll = null;
   shakeTime = 0;
   clouds = Array.from({ length: 4 }, () => ({
@@ -452,6 +456,7 @@ const sfx = {
   slash: () => beep(1400, 0.09, { type: "triangle", vol: 0.05, slideTo: 300 }),
   kill: () => beep(180, 0.18, { vol: 0.07, slideTo: 70 }),
   bonus: () => { beep(660, 0.06, { vol: 0.04 }); beep(990, 0.09, { vol: 0.04, delay: 0.06 }); },
+  wave: () => { beep(440, 0.12); beep(554, 0.12, { delay: 0.13 }); beep(659, 0.22, { delay: 0.26 }); },
   coin: () => { beep(990, 0.05, { vol: 0.04 }); beep(1480, 0.1, { vol: 0.04, delay: 0.05 }); }
 };
 
@@ -540,43 +545,78 @@ duckBtn.addEventListener("pointerdown", (e) => {
 });
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 
+// --- Waves ---
+// Every WAVE_LENGTH points a new wave starts and everything gets tougher, up
+// to MAX_WAVE. The minimum gap between obstacles is never shrunk (a jump
+// always takes the same time), so later waves stay hard but possible.
+const WAVE_LENGTH = 300;
+const MAX_WAVE = 8;
+
+function waveAt(s) { return 1 + Math.floor(s / WAVE_LENGTH); }
+
+// 0 in wave 1 .. 1 from MAX_WAVE on
+function waveIntensity() { return Math.min(1, (wave - 1) / (MAX_WAVE - 1)); }
+
+// Spawn x for something moving at objSpeed so it reaches the player when a
+// ground obstacle spawned now would. Faster things start further off-screen;
+// otherwise they'd catch up with the obstacle ahead and leave no room to land.
+function arrivalX(objSpeed) {
+  return player.x + (W + 20 - player.x) * objSpeed / speed;
+}
+
 // --- Obstacles ---
 function spawnObstacle() {
+  const t = waveIntensity();
   const roll = Math.random();
-  if (score > 200 && roll < 0.25) {
+  // Later waves bring more drones and enemies and fewer plain rocks
+  const droneChance = 0.25 + 0.1 * t;
+  const enemyChance = droneChance + 0.2 + 0.1 * t;
+  if (score > 200 && roll < droneChance) {
     // Flying drone (top of a 22-tall box). Low: skims the ground, must be jumped.
     // Mid: head height, hits a standing player but clears a ducking one.
     // High: harmless unless you jump into it. The sword can't hurt drones.
+    // From wave 3 they bob up and down a little (never enough to change
+    // whether you need to jump or duck).
     const tops = [GROUND_Y - 28, GROUND_Y - 58, GROUND_Y - 109];
+    const y = tops[Math.floor(Math.random() * tops.length)];
+    const mul = 1.1 + 0.2 * t;  // drones fly faster than the ground scrolls, more so each wave
     obstacles.push({
       type: "drone",
-      x: W + 20,
-      y: tops[Math.floor(Math.random() * tops.length)],
+      x: arrivalX(speed * mul),
+      mul,
+      y, baseY: y,
+      bob: wave >= 3 ? 3 + 5 * t : 0,
       w: 40,
       h: 22,
-      spin: 0
+      spin: Math.random() * 6
     });
-  } else if (score > 40 && roll < 0.45) {
-    // Enemy stickman charging at the player: slash him or jump over him
-    obstacles.push({
-      type: "enemy",
-      x: W + 20,
-      y: GROUND_Y - player.standH,
-      w: player.w,
-      h: player.standH,
-      run: 80 + Math.random() * 80,  // px/s he runs towards the player
-      runPhase: Math.random() * 6,
-      onGround: true, ducking: false, vy: 0, attack: 0  // fields read by getPose
-    });
-  } else if (score > 100 && roll < 0.58) {
-    // Fallen log: low but long, so the jump has to be timed earlier
+  } else if (score > 40 && roll < enemyChance) {
+    // Enemy stickmen charging at the player: slash them or jump over them.
+    // They run faster each wave, and from wave 3 sometimes come in pairs.
+    const pair = wave >= 3 && Math.random() < 0.15 + 0.25 * t;
+    const run = 80 + 120 * t + Math.random() * 80;  // px/s they run towards the player
+    for (let i = 0; i < (pair ? 2 : 1); i++) {
+      obstacles.push({
+        type: "enemy",
+        x: arrivalX(speed + run) + i * (70 + Math.random() * 25),
+        y: GROUND_Y - player.standH,
+        w: player.w,
+        h: player.standH,
+        run,
+        runPhase: Math.random() * 6,
+        onGround: true, ducking: false, vy: 0, attack: 0  // fields read by getPose
+      });
+    }
+  } else if (score > 100 && roll < enemyChance + 0.13) {
+    // Fallen log: low but long, so the jump has to be timed earlier. Longer each wave.
     const h = 16 + Math.random() * 6;
-    const w = 60 + Math.random() * 50;
+    const w = 60 + 50 * t + Math.random() * 50;
     obstacles.push({ type: "log", x: W + 20, y: GROUND_Y - h, w, h });
   } else {
-    // Ground rocks / spikes, sometimes in groups
-    const count = 1 + Math.floor(Math.random() * (score > 400 ? 3 : 2));
-    const h = 26 + Math.random() * 24;
+    // Ground rocks / spikes in groups that grow taller and wider each wave
+    const maxCount = score > 400 ? 3 + Math.round(t) : 2;
+    const count = 1 + Math.floor(Math.random() * maxCount);
+    const h = 26 + 12 * t + Math.random() * 24;
     const w = 18 * count + 4;
     obstacles.push({ type: "rock", x: W + 20, y: GROUND_Y - h, w, h, count });
   }
@@ -588,6 +628,12 @@ function update(dt) {
   speed = Math.min(diff.max, speed + diff.gain * dt);
   distance += speed * dt;
   score = Math.floor(distance / 40) + bonusScore;
+
+  if (waveAt(score) > wave) {
+    wave = waveAt(score);
+    waveBanner = 2;
+    sfx.wave();
+  }
 
   if (Math.floor(score / 100) > lastMilestone) {
     lastMilestone = Math.floor(score / 100);
@@ -617,18 +663,20 @@ function update(dt) {
   player.attack = Math.max(0, player.attack - dt);
   player.attackCooldown = Math.max(0, player.attackCooldown - dt);
 
-  // Spawn obstacles — gap shrinks as speed rises
+  // Spawn obstacles — gap shrinks as speed rises, and the random extra
+  // breathing room shrinks each wave so obstacles come steadily closer together
   spawnTimer -= dt;
   if (spawnTimer <= 0) {
     spawnObstacle();
     const minGap = 0.6 + 260 / speed;
-    spawnTimer = minGap + Math.random() * 0.9;
+    spawnTimer = minGap + Math.random() * (0.9 - 0.6 * waveIntensity());
   }
 
   for (const o of obstacles) {
     if (o.type === "drone") {
-      o.x -= speed * 1.1 * dt;
+      o.x -= speed * o.mul * dt;
       o.spin += dt;
+      o.y = o.baseY + Math.sin(o.spin * 3) * o.bob;
     } else if (o.type === "enemy") {
       o.x -= (speed + o.run) * dt;
       o.runPhase += dt * (o.run + 250) / 24;
@@ -749,7 +797,8 @@ function gameOver() {
   releaseDuck();
   document.getElementById("overText").textContent =
     `SCORE ${pad5(score)}   HIGH ${pad5(high(runDiff))} (${DIFFICULTIES[runDiff].label})`;
-  document.getElementById("overGold").textContent = `GOLD +${runGold}   TOTAL ${totalGold}`;
+  document.getElementById("overGold").textContent =
+    `WAVE ${wave}   GOLD +${runGold}   TOTAL ${totalGold}`;
   showMenu("over");
 }
 
@@ -1215,6 +1264,19 @@ function draw() {
   ctx.textAlign = "right";
   ctx.fillText(`x ${String(runGold).padStart(3, "0")}`, W - 20, 62);
 
+  // Current wave, plus a big banner for a moment when a new one starts
+  ctx.textAlign = "center";
+  ctx.font = "bold 18px 'Courier New', monospace";
+  ctx.fillText(`WAVE ${wave}`, W / 2, 36);
+  if (waveBanner > 0) {
+    ctx.globalAlpha = Math.min(1, waveBanner / 0.5);
+    ctx.font = "bold 40px 'Courier New', monospace";
+    ctx.fillText(`WAVE ${wave}`, W / 2, 115);
+    ctx.font = "bold 16px 'Courier New', monospace";
+    ctx.fillText("IT GETS HARDER...", W / 2, 140);
+    ctx.globalAlpha = 1;
+  }
+
   // Score (the current score blinks for a moment every 100 points)
   ctx.fillStyle = colors.ink;
   ctx.font = "bold 20px 'Courier New', monospace";
@@ -1238,6 +1300,7 @@ function loop(time) {
   for (const c of corpses) updateRagdoll(c, dt);
   if (shakeTime > 0) shakeTime -= dt;
   if (flashTime > 0) flashTime -= dt;
+  if (waveBanner > 0 && state === "running") waveBanner -= dt;
   draw();
   requestAnimationFrame(loop);
 }
