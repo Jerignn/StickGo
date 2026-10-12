@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StickGo</title>
+<style>
+  /* --sky and --ink are updated by the game for the day/night cycle */
+  :root { --btn-size: 18vh; --sky: #f7f7f7; --ink: #535353; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--sky);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Courier New", monospace;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  canvas {
+    /* Keep the 3:1 shape and fill as much of the screen as possible */
+    width: min(100vw, 300vh);
+    height: min(100vh, 33.333vw);
+    background: var(--sky);
+  }
+  .btn {
+    position: fixed;
+    bottom: 5vh;
+    width: var(--btn-size);
+    height: var(--btn-size);
+    min-width: 64px;
+    min-height: 64px;
+    border-radius: 50%;
+    border: 3px solid var(--ink);
+    background: rgba(128, 128, 128, 0.15);
+    color: var(--ink);
+    font: bold 16px "Courier New", monospace;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn.pressed { background: rgba(128, 128, 128, 0.4); }
+  #duckBtn { left: 4vw; }
+  #jumpBtn { right: 4vw; }
+  /* Hide the buttons on computers with a mouse; keyboard is used there */
+  @media (hover: hover) and (pointer: fine) {
+    .btn { display: none; }
+  }
+  /* Jump/duck/pause only show while playing */
+  body:not(.playing) .btn,
+  body:not(.playing) #pauseBtn { display: none; }
+
+  #pauseBtn {
+    position: fixed;
+    top: 4vh;
+    left: 3vw;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    border: 3px solid var(--ink);
+    background: rgba(128, 128, 128, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+  }
+  #pauseBtn span { width: 7px; height: 22px; background: var(--ink); border-radius: 2px; }
+
+  .menu {
+    position: fixed;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: rgba(247, 247, 247, 0.88);
+    color: #535353;
+  }
+  .menu.open { display: flex; }
+  .menu h1 { margin: 0 0 6px; font-size: 32px; letter-spacing: 4px; }
+  .menu p { margin: 0; font-size: 14px; }
+  .menu button {
+    min-width: 240px;
+    padding: 10px 20px;
+    font: bold 18px "Courier New", monospace;
+    color: #535353;
+    background: #f7f7f7;
+    border: 3px solid #535353;
+    border-radius: 10px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .menu button:active { background: #dcdcdc; }
+
+  /* Main menu: full-screen artwork (it already has the logo) with buttons on the left */
+  #mainMenu {
+    background: #1a1430 url("pictures/mainmenu.jpg") center 25% / cover no-repeat;
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: 0 0 9vh 6vw;
+    box-sizing: border-box;
+  }
+  #mainMenu button {
+    color: #fff;
+    background: rgba(20, 12, 30, 0.6);
+    border-color: #ff8a1f;
+    box-shadow: 0 0 12px rgba(255, 110, 20, 0.45);
+    text-shadow: 0 1px 2px #000;
+  }
+  #mainMenu button:active { background: rgba(255, 120, 30, 0.55); }
+  #mainMenu p {
+    color: #fff;
+    text-shadow: 0 1px 3px #000, 0 0 6px #000;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="900" height="300"></canvas>
+<div class="btn" id="duckBtn">DUCK</div>
+<div class="btn" id="jumpBtn">JUMP</div>
+<div id="pauseBtn" aria-label="Pause"><span></span><span></span></div>
+
+<div class="menu" id="mainMenu">
+  <button data-action="play">PLAY</button>
+  <button data-action="settings">SETTINGS</button>
+  <p id="highText"></p>
+  <p>Jump: JUMP button / SPACE &nbsp; Duck: hold DUCK / DOWN</p>
+</div>
+
+<div class="menu" id="pauseMenu">
+  <h1>PAUSED</h1>
+  <button data-action="resume">RESUME</button>
+  <button data-action="settings">SETTINGS</button>
+  <button data-action="main">MAIN MENU</button>
+</div>
+
+<div class="menu" id="settingsMenu">
+  <h1>SETTINGS</h1>
+  <button data-action="difficulty" id="difficultyBtn"></button>
+  <button data-action="btnSize" id="btnSizeBtn"></button>
+  <button data-action="sound" id="soundBtn"></button>
+  <button data-action="resetHigh" id="resetHighBtn">RESET HIGH SCORES</button>
+  <button data-action="back">BACK</button>
+</div>
+
+<div class="menu" id="overMenu">
+  <h1>GAME OVER</h1>
+  <p id="overText"></p>
+  <button data-action="play">PLAY AGAIN</button>
+  <button data-action="main">MAIN MENU</button>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+// Game world is always 900x300 units; the canvas is scaled to the screen's
+// real pixel density so lines stay crisp instead of being stretched.
+const W = 900;
+const H = 300;
+
+function resizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+  ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+const GROUND_Y = 250;
+
+// --- Tunable settings ---
+const GRAVITY = 2400;        // px/s^2
+const JUMP_VELOCITY = -820;  // px/s
+const JUMP_BUFFER = 0.1;     // s a jump press is remembered while still in the air
+// Movement is split into steps no longer than this, so at top speed the world
+// moves ~10px per step and small rocks can't skip past the player on slow phones.
+const PHYSICS_STEP = 1 / 120;
+
+// Speeds in px/s; gain is px/s added per second
+const DIFFICULTIES = {
+  easy:   { label: "EASY",   start: 320, max: 800,  gain: 5 },
+  normal: { label: "NORMAL", start: 380, max: 1000, gain: 8 },
+  hard:   { label: "HARD",   start: 460, max: 1200, gain: 12 }
+};
+const BUTTON_SIZES = {
+  small:  { label: "SMALL",  size: "14vh" },
+  medium: { label: "MEDIUM", size: "18vh" },
+  large:  { label: "LARGE",  size: "24vh" }
+};
+
+const settings = Object.assign(
+  { difficulty: "normal", btnSize: "medium", sound: true },
+  JSON.parse(localStorage.getItem("stickgo-settings") || "{}")
+);
+
+function saveSettings() {
+  localStorage.setItem("stickgo-settings", JSON.stringify(settings));
+}
+
+// High scores are kept per difficulty, since harder modes score faster
+const highScores = JSON.parse(localStorage.getItem("stickgo-highs") || "{}");
+// Older versions kept a single high score; carry it over to the current difficulty
+const oldHigh = Number(localStorage.getItem("stickgo-high") || 0);
+if (oldHigh) {
+  highScores[settings.difficulty] = Math.max(oldHigh, highScores[settings.difficulty] || 0);
+  localStorage.setItem("stickgo-highs", JSON.stringify(highScores));
+  localStorage.removeItem("stickgo-high");
+}
+function high(diff) { return highScores[diff] || 0; }
+
+// --- Game state ---
+let state = "ready";         // "ready" | "running" | "paused" | "dying" | "over"
+let speed, score, distance, obstacles, clouds, groundBits, spawnTimer, lastTime;
+let runDiff = settings.difficulty;  // difficulty of the current run; settings changes apply next run
+let jumpBuffer = 0;          // time left on a remembered jump press
+let lastMilestone = 0;       // last multiple of 100 reached, for the score flash
+let flashTime = 0;
+
+const player = {
+  x: 80,
+  y: 0,
+  vy: 0,
+  onGround: true,
+  ducking: false,
+  runPhase: 0,
+  standH: 60,
+  duckH: 36,
+  w: 26,
+  get h() { return this.ducking && this.onGround ? this.duckH : this.standH; }
+};
+
+function reset() {
+  runDiff = settings.difficulty;
+  speed = DIFFICULTIES[runDiff].start;
+  score = 0;
+  distance = 0;
+  obstacles = [];
+  spawnTimer = 1;
+  jumpBuffer = 0;
+  lastMilestone = 0;
+  flashTime = 0;
+  player.y = GROUND_Y - player.standH;
+  player.vy = 0;
+  player.onGround = true;
+  player.ducking = false;
+  ragdoll = null;
+  shakeTime = 0;
+  clouds = Array.from({ length: 4 }, () => ({
+    x: Math.random() * W,
+    y: 30 + Math.random() * 90,
+    speed: 0.15 + Math.random() * 0.15
+  }));
+  groundBits = Array.from({ length: 40 }, () => ({
+    x: Math.random() * W,
+    y: GROUND_Y + 4 + Math.random() * 18,
+    w: 2 + Math.random() * 6
+  }));
+}
+
+// --- Screens & menus ---
+const menus = {
+  main: document.getElementById("mainMenu"),
+  pause: document.getElementById("pauseMenu"),
+  settings: document.getElementById("settingsMenu"),
+  over: document.getElementById("overMenu")
+};
+let settingsReturnTo = "main";   // which menu BACK returns to
+let resetArmed = false;          // reset high score needs a second tap
+
+function showMenu(name) {
+  for (const [key, el] of Object.entries(menus)) el.classList.toggle("open", key === name);
+  document.body.classList.toggle("playing", name === null);
+  if (name === "main") {
+    document.getElementById("highText").textContent =
+      `HIGH SCORE ${pad5(high(settings.difficulty))} (${DIFFICULTIES[settings.difficulty].label})`;
+  }
+  if (name === "settings") refreshSettingsLabels();
+}
+
+function refreshSettingsLabels() {
+  const nextRun = state === "paused" && settings.difficulty !== runDiff ? " (NEXT RUN)" : "";
+  document.getElementById("difficultyBtn").textContent =
+    `DIFFICULTY: ${DIFFICULTIES[settings.difficulty].label}${nextRun}`;
+  document.getElementById("btnSizeBtn").textContent =
+    `BUTTON SIZE: ${BUTTON_SIZES[settings.btnSize].label}`;
+  document.getElementById("soundBtn").textContent = `SOUND: ${settings.sound ? "ON" : "OFF"}`;
+  document.getElementById("resetHighBtn").textContent =
+    resetArmed ? "TAP AGAIN TO CONFIRM" : "RESET HIGH SCORES";
+  document.documentElement.style.setProperty("--btn-size", BUTTON_SIZES[settings.btnSize].size);
+}
+
+function nextKey(obj, current) {
+  const keys = Object.keys(obj);
+  return keys[(keys.indexOf(current) + 1) % keys.length];
+}
+
+function startGame() {
+  reset();
+  state = "running";
+  showMenu(null);
+}
+
+function pauseGame() {
+  if (state !== "running") return;
+  state = "paused";
+  jumpBuffer = 0;
+  releaseDuck();
+  showMenu("pause");
+}
+
+function resumeGame() {
+  state = "running";
+  showMenu(null);
+}
+
+function goToMainMenu() {
+  reset();
+  state = "ready";
+  showMenu("main");
+}
+
+function openSettings(from) {
+  settingsReturnTo = from;
+  resetArmed = false;
+  showMenu("settings");
+}
+
+const menuActions = {
+  play: startGame,
+  resume: resumeGame,
+  main: goToMainMenu,
+  settings: () => openSettings(state === "paused" ? "pause" : "main"),
+  back: () => showMenu(settingsReturnTo),
+  difficulty: () => {
+    settings.difficulty = nextKey(DIFFICULTIES, settings.difficulty);
+    saveSettings();
+    refreshSettingsLabels();
+  },
+  btnSize: () => {
+    settings.btnSize = nextKey(BUTTON_SIZES, settings.btnSize);
+    saveSettings();
+    refreshSettingsLabels();
+  },
+  sound: () => {
+    settings.sound = !settings.sound;
+    saveSettings();
+    refreshSettingsLabels();
+  },
+  resetHigh: () => {
+    if (resetArmed) {
+      for (const key of Object.keys(highScores)) delete highScores[key];
+      localStorage.removeItem("stickgo-highs");
+      resetArmed = false;
+    } else {
+      resetArmed = true;
+    }
+    refreshSettingsLabels();
+  }
+};
+
+document.querySelectorAll(".menu button").forEach((b) => {
+  b.addEventListener("click", () => menuActions[b.dataset.action]());
+});
+
+// Called by the Android app when the phone's back button is pressed.
+// Returns true if the game handled it, false to let the app close.
+window.stickgoBack = function () {
+  if (state === "dying") return true;
+  if (state === "running") { pauseGame(); return true; }
+  if (menus.settings.classList.contains("open")) { showMenu(settingsReturnTo); return true; }
+  if (state === "paused") { resumeGame(); return true; }
+  if (state === "over") { goToMainMenu(); return true; }
+  return false;
+};
+
+// Pause automatically if the app is switched away from mid-run
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) pauseGame();
+});
+
+// --- Sound ---
+// Small synthesized beeps, so no audio files are needed. Browsers only allow
+// audio after the player has touched or pressed something, so it starts then.
+let audio = null;
+
+function initAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!audio && AC) audio = new AC();
+  if (audio && audio.state === "suspended") audio.resume();
+}
+for (const ev of ["pointerdown", "pointerup", "keydown", "click"]) {
+  document.addEventListener(ev, initAudio, true);
+}
+
+function beep(freq, dur, { type = "square", vol = 0.06, slideTo, delay = 0 } = {}) {
+  if (!settings.sound || !audio || audio.state !== "running") return;
+  const t = audio.currentTime + delay;
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t);
+  if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+  gain.gain.setValueAtTime(vol, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  osc.connect(gain).connect(audio.destination);
+  osc.start(t);
+  osc.stop(t + dur);
+}
+
+const sfx = {
+  jump: () => beep(500, 0.12, { slideTo: 900 }),
+  point: () => { beep(880, 0.08); beep(1320, 0.14, { delay: 0.09 }); },
+  hit: () => beep(240, 0.4, { type: "sawtooth", vol: 0.08, slideTo: 50 })
+};
+
+// --- Input ---
+// A press is remembered briefly, so tapping just before landing still jumps
+function jump() {
+  if (state === "running") jumpBuffer = JUMP_BUFFER;
+}
+
+function duck() {
+  if (state !== "running") return;
+  player.ducking = true;
+  // Fast-fall when ducking mid-air
+  if (!player.onGround) player.vy = Math.max(player.vy, 600);
+}
+
+document.addEventListener("keydown", (e) => {
+  if (["Escape", "KeyP"].includes(e.code)) {
+    e.preventDefault();
+    window.stickgoBack();
+    return;
+  }
+  if (["Space", "ArrowUp", "KeyW"].includes(e.code)) {
+    e.preventDefault();
+    if (state === "ready" && menus.main.classList.contains("open")) startGame();
+    else if (state === "over") startGame();
+    else jump();
+  }
+  if (["ArrowDown", "KeyS"].includes(e.code)) {
+    e.preventDefault();
+    duck();
+  }
+});
+
+document.addEventListener("keyup", (e) => {
+  if (["ArrowDown", "KeyS"].includes(e.code)) player.ducking = false;
+});
+
+// Touch: on-screen JUMP / DUCK buttons (tapping elsewhere does nothing)
+const jumpBtn = document.getElementById("jumpBtn");
+const duckBtn = document.getElementById("duckBtn");
+const pauseBtn = document.getElementById("pauseBtn");
+
+function releaseDuck() {
+  player.ducking = false;
+  duckBtn.classList.remove("pressed");
+}
+
+pauseBtn.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  pauseGame();
+});
+
+jumpBtn.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  jumpBtn.classList.add("pressed");
+  jump();
+});
+for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
+  jumpBtn.addEventListener(ev, () => jumpBtn.classList.remove("pressed"));
+  duckBtn.addEventListener(ev, releaseDuck);
+}
+
+duckBtn.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  duckBtn.classList.add("pressed");
+  duck();
+});
+document.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// --- Obstacles ---
+function spawnObstacle() {
+  const roll = Math.random();
+  if (score > 200 && roll < 0.3) {
+    // Flying bird (top of a 22-tall box). Low: skims the ground, must be jumped.
+    // Mid: head height, hits a standing player but clears a ducking one.
+    // High: harmless unless you jump into it.
+    const tops = [GROUND_Y - 28, GROUND_Y - 58, GROUND_Y - 109];
+    obstacles.push({
+      type: "bird",
+      x: W + 20,
+      y: tops[Math.floor(Math.random() * tops.length)],
+      w: 40,
+      h: 22,
+      flap: 0
+    });
+  } else if (score > 100 && roll < 0.45) {
+    // Fallen log: low but long, so the jump has to be timed earlier
+    const h = 16 + Math.random() * 6;
+    const w = 60 + Math.random() * 50;
+    obstacles.push({ type: "log", x: W + 20, y: GROUND_Y - h, w, h });
+  } else {
+    // Ground rocks / spikes, sometimes in groups
+    const count = 1 + Math.floor(Math.random() * (score > 400 ? 3 : 2));
+    const h = 26 + Math.random() * 24;
+    const w = 18 * count + 4;
+    obstacles.push({ type: "rock", x: W + 20, y: GROUND_Y - h, w, h, count });
+  }
+}
+
+// --- Update ---
+function update(dt) {
+  const diff = DIFFICULTIES[runDiff];
+  speed = Math.min(diff.max, speed + diff.gain * dt);
+  distance += speed * dt;
+  score = Math.floor(distance / 40);
+
+  if (Math.floor(score / 100) > lastMilestone) {
+    lastMilestone = Math.floor(score / 100);
+    flashTime = 0.9;
+    sfx.point();
+  }
+
+  // Player physics
+  jumpBuffer -= dt;
+  if (jumpBuffer > 0 && player.onGround) {
+    player.y = GROUND_Y - player.standH;  // stand up first if he was ducking
+    player.vy = JUMP_VELOCITY;
+    player.onGround = false;
+    jumpBuffer = 0;
+    sfx.jump();
+  }
+  player.vy += GRAVITY * dt;
+  player.y += player.vy * dt;
+  if (player.y + player.h >= GROUND_Y) {
+    player.vy = 0;
+    player.onGround = true;
+  }
+  // On the ground the feet stay on the floor, so ducking or landing while
+  // ducked drops him straight down instead of floating for a few frames
+  if (player.onGround) player.y = GROUND_Y - player.h;
+  if (player.onGround) player.runPhase += dt * speed / 24;
+
+  // Spawn obstacles — gap shrinks as speed rises
+  spawnTimer -= dt;
+  if (spawnTimer <= 0) {
+    spawnObstacle();
+    const minGap = 0.6 + 260 / speed;
+    spawnTimer = minGap + Math.random() * 0.9;
+  }
+
+  for (const o of obstacles) {
+    o.x -= (o.type === "bird" ? speed * 1.1 : speed) * dt;
+    if (o.type === "bird") o.flap += dt * 10;
+  }
+  obstacles = obstacles.filter((o) => o.x + o.w > -50);
+
+  for (const c of clouds) {
+    c.x -= speed * c.speed * dt;
+    if (c.x < -80) { c.x = W + Math.random() * 200; c.y = 30 + Math.random() * 90; }
+  }
+  for (const g of groundBits) {
+    g.x -= speed * dt;
+    if (g.x < -10) g.x = W + Math.random() * 40;
+  }
+
+  // Collision (hitboxes shrunk a little so it feels fair)
+  const pad = 6;
+  const px = player.x + pad, py = player.y + pad;
+  const pw = player.w - pad * 2, ph = player.h - pad * 2;
+  for (const o of obstacles) {
+    if (px < o.x + o.w - 4 && px + pw > o.x + 4 && py < o.y + o.h - 4 && py + ph > o.y + 4) {
+      crash(o);
+      break;
+    }
+  }
+}
+
+function gameOver() {
+  state = "over";
+  if (score > high(runDiff)) {
+    highScores[runDiff] = score;
+    localStorage.setItem("stickgo-highs", JSON.stringify(highScores));
+  }
+  releaseDuck();
+  document.getElementById("overText").textContent =
+    `SCORE ${pad5(score)}   HIGH ${pad5(high(runDiff))} (${DIFFICULTIES[runDiff].label})`;
+  showMenu("over");
+}
+
+// --- Ragdoll ---
+// On a hit the world freezes and the stickman's joints become free points
+// held together by bone-length constraints (Verlet integration).
+const RAGDOLL_STEP = 1 / 120;
+const RAGDOLL_DURATION = 1.3;  // seconds before the game-over menu appears
+const BONES = [
+  ["head", "neck"], ["neck", "shoulder"], ["shoulder", "hip"],
+  ["shoulder", "elbowF"], ["elbowF", "handF"], ["shoulder", "elbowB"], ["elbowB", "handB"],
+  ["hip", "kneeF"], ["kneeF", "footF"], ["hip", "kneeB"], ["kneeB", "footB"]
+];
+// Extra links that keep the head and torso from folding up unnaturally
+const BRACES = [["head", "shoulder"]];
+const UPPER_BODY = new Set(["head", "neck", "shoulder", "elbowF", "handF", "elbowB", "handB"]);
+
+let ragdoll = null;
+let shakeTime = 0;
+
+function crash(obstacle) {
+  state = "dying";
+  releaseDuck();
+  document.body.classList.remove("playing");
+  shakeTime = 0.25;
+  sfx.hit();
+
+  const pose = getPose();
+  // A bird hitting the upper body knocks him backwards; anything else trips him forwards
+  const knockBack = obstacle.type === "bird" && obstacle.y + obstacle.h / 2 < pose.hip.y;
+  const points = {};
+  for (const [name, pt] of Object.entries(pose)) {
+    const upper = UPPER_BODY.has(name);
+    let vx = knockBack ? (upper ? -0.45 : 0.25) * speed : (upper ? 0.6 : 0.3) * speed;
+    vx += (Math.random() - 0.5) * 60;
+    const vy = Math.min(player.vy, 0) * 0.6 - (knockBack ? 220 : 480) * (upper ? 1 : 0.4);
+    points[name] = {
+      x: pt.x, y: pt.y,
+      px: pt.x - vx * RAGDOLL_STEP, py: pt.y - vy * RAGDOLL_STEP,
+      r: name === "head" ? BODY.headR : 2
+    };
+  }
+
+  // Collision is detected a few pixels late, so he's slightly inside the rock.
+  // Step him back to touching it (hidden by the screen shake).
+  if (obstacle.type !== "bird") {
+    let overlap = 0;
+    for (const p of Object.values(points)) {
+      const b = rockBounds(obstacle, p.r);
+      if (p.y > b.top) overlap = Math.max(overlap, p.x - b.left);
+    }
+    for (const p of Object.values(points)) { p.x -= overlap; p.px -= overlap; }
+  }
+  const links = [...BONES, ...BRACES].map(([a, b]) =>
+    [points[a], points[b], Math.hypot(points[a].x - points[b].x, points[a].y - points[b].y)]);
+  ragdoll = { points, links, time: 0, acc: 0 };
+}
+
+function updateRagdoll(dt) {
+  ragdoll.time += dt;
+  ragdoll.acc += dt;
+  while (ragdoll.acc >= RAGDOLL_STEP) {
+    ragdollStep();
+    ragdoll.acc -= RAGDOLL_STEP;
+  }
+  if (state === "dying" && ragdoll.time >= RAGDOLL_DURATION) gameOver();
+}
+
+function ragdollStep() {
+  const pts = Object.values(ragdoll.points);
+  const g = GRAVITY * RAGDOLL_STEP * RAGDOLL_STEP;
+
+  for (const p of pts) {
+    const vx = (p.x - p.px) * 0.998;
+    const vy = (p.y - p.py) * 0.998;
+    p.px = p.x;
+    p.py = p.y;
+    p.x += vx;
+    p.y += vy + g;
+  }
+
+  for (let i = 0; i < 8; i++) {
+    for (const [a, b, len] of ragdoll.links) {
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.hypot(dx, dy) || 0.001;
+      const k = (d - len) / d / 2;
+      a.x += dx * k; a.y += dy * k;
+      b.x -= dx * k; b.y -= dy * k;
+    }
+    for (const p of pts) collidePoint(p);
+  }
+
+  // Ground friction so he skids to a stop instead of sliding forever
+  for (const p of pts) {
+    if (p.y >= GROUND_Y - p.r - 0.5) p.px = p.x - (p.x - p.px) * 0.8;
+  }
+}
+
+function collidePoint(p) {
+  if (p.y > GROUND_Y - p.r) p.y = GROUND_Y - p.r;
+  p.x = Math.max(p.r, Math.min(W - p.r, p.x));
+  // Rocks and logs are solid. Only block a point on the face it crossed this
+  // step (using its previous position), so nothing gets flung out sideways.
+  for (const o of obstacles) {
+    if (o.type === "bird") continue;
+    const b = rockBounds(o, p.r);
+    if (!(p.x > b.left && p.x < b.right && p.y > b.top)) continue;
+    // Moving a Verlet point also changes its implied velocity, so the previous
+    // position moves with it; motion into the face is cancelled.
+    if (p.py <= b.top) { p.py += b.top - p.y; p.y = b.top; p.py = Math.max(p.py, p.y); }
+    else if (p.px <= b.left) { p.px += b.left - p.x; p.x = b.left; p.px = Math.max(p.px, p.x); }
+    else if (p.px >= b.right) { p.px += b.right - p.x; p.x = b.right; p.px = Math.min(p.px, p.x); }
+  }
+}
+
+function rockBounds(o, r) {
+  return { left: o.x + 3 - r, right: o.x + o.w - 3 + r, top: o.y + 4 - r };
+}
+
+// --- Drawing ---
+// Day/night cycle: every 1000 points it fades to night around 700 and back by 1000
+const DAY   = { sky: [247, 247, 247], ink: [83, 83, 83],    inkBack: [163, 163, 163], cloud: [224, 224, 224] };
+const NIGHT = { sky: [32, 35, 42],    ink: [214, 214, 214], inkBack: [118, 118, 118], cloud: [58, 62, 72] };
+const STARS = Array.from({ length: 24 }, () => ({ x: Math.random() * W, y: 10 + Math.random() * 130 }));
+let colors;
+let night = 0;
+
+function nightLevel(s) {
+  const p = s % 1000;
+  return Math.max(0, Math.min(1, (p - 650) / 50, (1000 - p) / 50));
+}
+
+function paletteAt(t) {
+  const out = {};
+  for (const key of Object.keys(DAY)) {
+    out[key] = `rgb(${DAY[key].map((v, i) => Math.round(v + (NIGHT[key][i] - v) * t)).join(",")})`;
+  }
+  return out;
+}
+
+function updateColors() {
+  const t = nightLevel(score);
+  if (colors && t === night) return;
+  night = t;
+  colors = paletteAt(t);
+  // The page around the canvas and the on-screen buttons follow along
+  document.documentElement.style.setProperty("--sky", colors.sky);
+  document.documentElement.style.setProperty("--ink", colors.ink);
+}
+
+function line(x1, y1, x2, y2) {
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+}
+
+// --- Stickman pose ---
+// Body proportions (game units)
+const BODY = { headR: 8, torso: 18, thigh: 12, shin: 12, upperArm: 10, foreArm: 9 };
+
+// Point at the end of a limb. Angle 0 = straight down, positive = forwards (+x).
+function limb(from, angle, len) {
+  return { x: from.x + Math.sin(angle) * len, y: from.y + Math.cos(angle) * len };
+}
+
+// Builds the joint positions for the current frame.
+// legs: [thighAngle, kneeBend], arms: [upperArmAngle, elbowBend]; index 0 = front, 1 = back
+function getPose() {
+  const p = player;
+  const ph = p.runPhase;
+  let lean, legs, arms;
+
+  if (!p.onGround) {
+    // Jump: front knee driven up, back leg trailing, arms reaching
+    const t = Math.max(-1, Math.min(1, p.vy / 800));  // -1 rising .. 1 falling
+    lean = 0.15;
+    legs = [[1.2 - 0.3 * t, 1.9 - 0.4 * t], [-0.35 + 0.2 * t, 0.9]];
+    arms = [[2.3 - 0.4 * t, 0.5], [-0.9, 1.2]];
+  } else if (p.ducking) {
+    // Low crouch-run, leaning far forward
+    const s = Math.sin(ph);
+    lean = 1.15;
+    legs = [[0.9 + 0.45 * s, 1.9], [0.9 - 0.45 * s, 1.9]];
+    arms = [[1.1 - 0.4 * s, 1.3], [1.1 + 0.4 * s, 1.3]];
+  } else {
+    // Run cycle: thighs swing in opposite phase, the knee folds most while
+    // the leg is swinging forward, arms swing opposite to the legs
+    lean = 0.22;
+    legs = [0, Math.PI].map((off) => {
+      const a = ph + off;
+      return [0.65 * Math.sin(a), 0.2 + 1.35 * Math.max(0, Math.cos(a - 0.5))];
+    });
+    arms = [0, Math.PI].map((off) => [-0.75 * Math.sin(ph + off), 1.6]);
+  }
+
+  // Place hips so the lowest foot rests on the bottom of the player box.
+  // This makes the body bob naturally as the legs move.
+  const legDrop = ([t, bend]) => BODY.thigh * Math.cos(t) + BODY.shin * Math.cos(t - bend);
+  const hip = {
+    x: p.x + p.w / 2 - 2,
+    y: p.y + p.h - Math.max(legDrop(legs[0]), legDrop(legs[1]))
+  };
+  const neck = limb(hip, Math.PI - lean, BODY.torso);
+  const head = limb(neck, Math.PI - lean, BODY.headR + 2);
+  const shoulder = limb(neck, -lean, 3);
+
+  const pose = { head, neck, shoulder, hip };
+  ["F", "B"].forEach((side, i) => {
+    const [thigh, bend] = legs[i];
+    pose["knee" + side] = limb(hip, thigh, BODY.thigh);
+    pose["foot" + side] = limb(pose["knee" + side], thigh - bend, BODY.shin);
+    const [upper, elbow] = arms[i];
+    pose["elbow" + side] = limb(shoulder, upper, BODY.upperArm);
+    pose["hand" + side] = limb(pose["elbow" + side], upper + elbow, BODY.foreArm);
+  });
+  return pose;
+}
+
+function drawFigure(pts) {
+  ctx.lineWidth = 4;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  const chain = (color, ...names) => {
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(pts[names[0]].x, pts[names[0]].y);
+    for (const n of names.slice(1)) ctx.lineTo(pts[n].x, pts[n].y);
+    ctx.stroke();
+  };
+
+  // Far side first (lighter, for depth) so the near side draws over it
+  chain(colors.inkBack, "hip", "kneeB", "footB");
+  chain(colors.inkBack, "shoulder", "elbowB", "handB");
+  chain(colors.ink, "neck", "shoulder", "hip");
+  chain(colors.ink, "hip", "kneeF", "footF");
+  chain(colors.ink, "shoulder", "elbowF", "handF");
+
+  ctx.fillStyle = colors.ink;
+  ctx.beginPath();
+  ctx.arc(pts.head.x, pts.head.y, BODY.headR, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawStickman() {
+  drawFigure(ragdoll ? ragdoll.points : getPose());
+}
+
+function drawObstacle(o) {
+  ctx.fillStyle = colors.ink;
+  ctx.strokeStyle = colors.ink;
+  if (o.type === "log") {
+    // Rounded log with a ring on the near end and a couple of bark lines
+    const r = o.h / 2, midY = o.y + r;
+    ctx.beginPath();
+    ctx.arc(o.x + r, midY, r, Math.PI / 2, Math.PI * 1.5);
+    ctx.arc(o.x + o.w - r, midY, r, -Math.PI / 2, Math.PI / 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = colors.sky;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(o.x + o.w - r, midY, r * 0.5, 0, Math.PI * 2); ctx.stroke();
+    line(o.x + r, midY - r * 0.4, o.x + o.w * 0.45, midY - r * 0.4);
+    line(o.x + o.w * 0.3, midY + r * 0.35, o.x + o.w - r * 2.2, midY + r * 0.35);
+  } else if (o.type === "rock") {
+    const each = (o.w - 4) / o.count;
+    for (let i = 0; i < o.count; i++) {
+      const bx = o.x + 2 + i * each;
+      // Spiky rock
+      ctx.beginPath();
+      ctx.moveTo(bx, GROUND_Y);
+      ctx.lineTo(bx + each * 0.15, o.y + o.h * 0.35);
+      ctx.lineTo(bx + each * 0.5, o.y);
+      ctx.lineTo(bx + each * 0.85, o.y + o.h * 0.3);
+      ctx.lineTo(bx + each, GROUND_Y);
+      ctx.closePath();
+      ctx.fill();
+    }
+  } else {
+    // Bird with flapping wings
+    const midY = o.y + o.h / 2;
+    const wing = Math.sin(o.flap) * 12;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(o.x + 20, midY, 14, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(o.x + 4, midY); ctx.lineTo(o.x - 4, midY - 3); ctx.lineTo(o.x + 4, midY + 3);
+    ctx.fill();
+    line(o.x + 16, midY, o.x + 22, midY - wing);
+    line(o.x + 22, midY - wing, o.x + 30, midY - wing * 0.6);
+  }
+}
+
+function drawCloud(c) {
+  ctx.fillStyle = colors.cloud;
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, 12, 0, Math.PI * 2);
+  ctx.arc(c.x + 16, c.y - 6, 16, 0, Math.PI * 2);
+  ctx.arc(c.x + 34, c.y, 12, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function pad5(n) { return String(n).padStart(5, "0"); }
+
+function draw() {
+  updateColors();
+  ctx.fillStyle = colors.sky;
+  ctx.fillRect(0, 0, W, H);
+
+  // Moon and stars fade in at night
+  if (night > 0) {
+    ctx.globalAlpha = night;
+    ctx.fillStyle = colors.ink;
+    for (const s of STARS) ctx.fillRect(s.x, s.y, 2, 2);
+    ctx.beginPath(); ctx.arc(W * 0.72, 55, 14, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = colors.sky;
+    ctx.beginPath(); ctx.arc(W * 0.72 + 7, 50, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.save();
+  if (shakeTime > 0) {
+    const m = shakeTime * 16;
+    ctx.translate((Math.random() - 0.5) * m, (Math.random() - 0.5) * m);
+  }
+
+  clouds.forEach(drawCloud);
+
+  // Ground
+  ctx.strokeStyle = colors.ink;
+  ctx.lineWidth = 2;
+  line(0, GROUND_Y, W, GROUND_Y);
+  ctx.fillStyle = colors.ink;
+  for (const g of groundBits) ctx.fillRect(g.x, g.y, g.w, 2);
+
+  obstacles.forEach(drawObstacle);
+  drawStickman();
+  ctx.restore();
+
+  // Score (the current score blinks for a moment every 100 points)
+  ctx.fillStyle = colors.ink;
+  ctx.font = "bold 20px 'Courier New', monospace";
+  ctx.textAlign = "right";
+  const showScore = flashTime <= 0 || Math.floor(flashTime * 8) % 2 === 0;
+  ctx.fillText(`HI ${pad5(high(runDiff))}  ${showScore ? pad5(score) : "     "}`, W - 20, 36);
+}
+
+// --- Main loop ---
+function loop(time) {
+  const dt = Math.min(0.033, (time - (lastTime ?? time)) / 1000);
+  lastTime = time;
+  if (state === "running") {
+    const steps = Math.ceil(dt / PHYSICS_STEP);
+    for (let i = 0; i < steps && state === "running"; i++) update(dt / steps);
+  }
+  if (ragdoll) updateRagdoll(dt);
+  if (shakeTime > 0) shakeTime -= dt;
+  if (flashTime > 0) flashTime -= dt;
+  draw();
+  requestAnimationFrame(loop);
+}
+
+reset();
+refreshSettingsLabels();
+showMenu("main");
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
