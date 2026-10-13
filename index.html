@@ -2388,7 +2388,7 @@ function limb(from, angle, len) {
 // legs: [thighAngle, kneeBend], arms: [upperArmAngle, elbowBend]; index 0 = front, 1 = back
 function getPose(p = player) {
   const ph = p.runPhase;
-  let lean, legs, arms;
+  let lean, legs, arms, lift = 0;
 
   if (!p.onGround) {
     // Jump: rising = front knee tucked up, one fist punched skyward, back leg folded;
@@ -2418,12 +2418,15 @@ function getPose(p = player) {
   } else {
     // Run cycle: thighs swing in opposite phase, the knee folds most while
     // the leg is swinging forward, arms swing opposite to the legs
-    lean = 0.22;
+    // (push off -> airborne -> land -> compression, like the reference sheet: a forward
+    // lean, a long stride, and the body springing up between footfalls)
+    lean = 0.42 + 0.06 * Math.cos(ph * 2);
     legs = [0, Math.PI].map((off) => {
       const a = ph + off;
-      return [0.65 * Math.sin(a), 0.2 + 1.35 * Math.max(0, Math.cos(a - 0.5))];
+      return [0.95 * Math.sin(a), 0.25 + 1.5 * Math.max(0, Math.cos(a - 0.6))];
     });
-    arms = [0, Math.PI].map((off) => [-0.75 * Math.sin(ph + off), 1.6]);
+    arms = [0, Math.PI].map((off) => [-1.0 * Math.sin(ph + off) + 0.15, 1.5]);
+    lift = 3.5 * Math.max(0, Math.cos(ph * 2 - 0.4));   // airborne moment of each stride
   }
   if (p.attack > 0) {
     // Sword swing: the front arm sweeps from over the head down to the front
@@ -2436,7 +2439,7 @@ function getPose(p = player) {
   const legDrop = ([t, bend]) => BODY.thigh * Math.cos(t) + BODY.shin * Math.cos(t - bend);
   const hip = {
     x: p.x + p.w / 2 - 2,
-    y: p.y + p.h - Math.max(legDrop(legs[0]), legDrop(legs[1]))
+    y: p.y + p.h - Math.max(legDrop(legs[0]), legDrop(legs[1])) - lift
   };
   const neck = limb(hip, Math.PI - lean, BODY.torso);
   const head = limb(neck, Math.PI - lean, BODY.headR + 2);
@@ -2789,14 +2792,15 @@ function drawSwordPreview(canvas, skin) {
 
 // The hero: a dark body with a blue rim light, shoes, hands, a red scarf streaming behind
 // him and glowing eyes. When he's down the scarf goes limp and his eyes turn to Xs.
+const HERO_HEAD = 9.5;   // the hero's head is bigger than the others', like the art
 function drawHero(pts, down = !!ragdoll) {
   const t = performance.now() / 1000;
   const h = pts.head;
 
   // Rim light (the aura): the same figure, wider and faint, drawn underneath
   const aura = auraColors();
-  drawFigure(pts, aura.front, aura.back, 8.2, BODY.headR + 2.2);
-  drawFigure(pts, colors.hero, colors.heroBack, 4.6, BODY.headR);
+  drawFigure(pts, aura.front, aura.back, 8.2, HERO_HEAD + 2.2);
+  drawFigure(pts, colors.hero, colors.heroBack, 4.6, HERO_HEAD);
 
   // Shoes and hands
   ctx.lineCap = "round";
@@ -2812,11 +2816,11 @@ function drawHero(pts, down = !!ragdoll) {
 
   // Scarf: two tails that flutter harder (and longer) the faster the game goes
   const knot = { x: pts.neck.x - 1, y: pts.neck.y + 1 };
-  const len = 15 + (speed || 400) * 0.012;
+  const len = 18 + (speed || 400) * 0.014;
   const scarf = scarfColors();
   for (const [l, dy, color, ph] of [[len * 1.3, 3, scarf.b, 1.3], [len, 0, scarf.a, 0]]) {
     ctx.strokeStyle = color;
-    ctx.lineWidth = 3.4;
+    ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(knot.x, knot.y);
     if (down) {
@@ -2841,18 +2845,12 @@ function drawHero(pts, down = !!ragdoll) {
     }
   } else {
     ctx.shadowColor = "#9fd4ff";
-    ctx.shadowBlur = 5;
-    for (const ex of [0.6, 4.2]) {
-      ctx.beginPath(); ctx.ellipse(h.x + ex, h.y - 0.8, 1.6, 2.3, 0.18, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 7;
+    ctx.fillStyle = "#ffffff";   // big glowing white eyes, slanted into an angry brow
+    for (const [ex, tilt] of [[0.9, -0.5], [5.2, 0.5]]) {
+      ctx.beginPath(); ctx.ellipse(h.x + ex, h.y - 0.8, 2.1, 2.9, tilt, 0, Math.PI * 2); ctx.fill();
     }
     ctx.shadowBlur = 0;
-    ctx.fillStyle = colors.hero;   // pupils, looking ahead
-    for (const ex of [0.6, 4.2]) {
-      ctx.beginPath(); ctx.arc(h.x + ex + 0.6, h.y - 0.6, 0.9, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.lineWidth = 1.1;
-    line(h.x - 1.4, h.y - 4.6, h.x + 2.2, h.y - 3.5);
-    line(h.x + 3.0, h.y - 3.5, h.x + 6.4, h.y - 4.5);
   }
 
   drawHat(look.equipped.hat, h, pts.neck);
