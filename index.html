@@ -124,6 +124,16 @@
     text-shadow: 0 1px 3px #000, 0 0 6px #000;
   }
 
+  /* Gold and high score sit in the top-right corner of the main menu */
+  .menu-stats {
+    position: absolute;
+    top: 4vh;
+    right: 4vw;
+    text-align: right;
+  }
+  #mainMenu .menu-stats p { font: bold 18px "Courier New", monospace; line-height: 1.5; }
+  #goldText { color: #ffd34d; }
+
   /* Shop + inventory: same artwork as the main menu, dimmed so the cards stand out */
   .store-menu {
     background: linear-gradient(rgba(12, 8, 24, 0.62), rgba(12, 8, 24, 0.62)),
@@ -222,9 +232,10 @@
     <button data-action="inventory">INVENTORY</button>
   </div>
   <button data-action="settings">SETTINGS</button>
-  <p id="highText"></p>
-  <p id="goldText"></p>
-  <p>Jump: JUMP / SPACE &nbsp; Duck: hold DUCK / DOWN &nbsp; Attack: ATTACK / X</p>
+  <div class="menu-stats">
+    <p id="goldText"></p>
+    <p id="highText"></p>
+  </div>
 </div>
 
 <div class="menu store-menu" id="shopMenu">
