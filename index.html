@@ -434,6 +434,7 @@
 </div>
 
 <script src="animations.js"></script>
+<script src="hold-data.js"></script>
 <script>
 const canvas = document.getElementById("game");
 let ctx = canvas.getContext("2d");   // swapped briefly to draw the hero into the customize preview
@@ -2969,11 +2970,62 @@ function heroSprite() {
   return stateFrame(HS.idle, rate(HS.idle) % HS.idle.frames.length);
 }
 
+// --- Holding a shop weapon (see tools/make_hold.py) ---
+// With a shop weapon equipped he is drawn from copies of his sheets with the scythe taken out,
+// his black slash trails are tinted in the weapon's colour, and the weapon is drawn in his hand.
+const HOLD = window.STICKGO_HOLD;
+const HOLD_SHEETS = {}, TRAIL_SHEETS = {}, HELD_IMGS = {};
+const loadImg = (src) => { const img = new Image(); img.src = src; return img; };
+for (const name of Object.keys(SHEET_FRAMES)) {
+  HOLD_SHEETS[name] = loadImg(`pictures/hold/hero_${name}.png`);
+  TRAIL_SHEETS[name] = loadImg(`pictures/hold/trail_${name}.png`);
+}
+for (const id of Object.keys(HOLD.weapons)) HELD_IMGS[id] = loadImg(`pictures/hold/w_${id}.png`);
+const ready = (img) => img.complete && img.naturalWidth;
+
+// The equipped shop weapon, or null for the starter scythe that is already in his sprites
+function heldWeapon() {
+  const skin = equippedSkin();
+  return skin.img && HOLD.weapons[skin.img] && ready(HELD_IMGS[skin.img]) ? skin : null;
+}
+function trailColor(skin) { return skin.slash ? WEAPON_FX[skin.slash].glow : HOLD.weapons[skin.img].color; }
+
+// A trail sheet in one colour, made once per sheet and colour
+const trailCache = {};
+function tintedTrail(sheet, color) {
+  const key = sheet + color;
+  if (trailCache[key]) return trailCache[key];
+  const img = TRAIL_SHEETS[sheet];
+  if (!ready(img)) return null;
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const g = c.getContext("2d");
+  g.drawImage(img, 0, 0);
+  g.globalCompositeOperation = "source-in";
+  g.fillStyle = color;
+  g.fillRect(0, 0, c.width, c.height);
+  return (trailCache[key] = c);
+}
+
+// The weapon in his hand, in sprite pixels: its grip on his grip, turned the way the scythe pointed
+function drawHeldWeapon(skin, sheet, frame) {
+  const grip = (HOLD.hero[sheet] || [])[frame];
+  if (!grip) return;
+  const w = HOLD.weapons[skin.img];
+  ctx.save();
+  ctx.translate(grip[0], grip[1]);
+  ctx.rotate(grip[2] - w.ang);
+  ctx.drawImage(HELD_IMGS[skin.img], -w.gx, -w.gy);
+  ctx.restore();
+}
+
 // One frame of a sheet, feet at (cx, feet); face = 1 (right) or -1 (left). The yellow body is
-// recoloured with the equipped colour and the accessories are drawn on his head.
-function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, color = look.equipped.color, accs = look.equipped.acc) {
-  const img = SHEETS[sheet];
-  if (!img.complete || !img.naturalWidth) return;
+// recoloured with the equipped colour, the accessories are drawn on his head and the equipped
+// shop weapon in his hand.
+function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, color = look.equipped.color, accs = look.equipped.acc, weapon = heldWeapon()) {
+  const held = weapon && ready(HOLD_SHEETS[sheet]) ? weapon : null;
+  const img = held ? HOLD_SHEETS[sheet] : SHEETS[sheet];
+  if (!ready(img)) return;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.translate(cx, feet + 2 * sc);
@@ -2984,7 +3036,12 @@ function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, color = look
   if (f) ctx.filter = f;
   ctx.drawImage(img, frame * FRAME_W, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
   ctx.filter = "none";
+  if (held) {
+    const trail = tintedTrail(sheet, trailColor(held));
+    if (trail) ctx.drawImage(trail, frame * FRAME_W, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
+  }
   if (accs.length) drawAccessories(accs, sheet, frame);
+  if (held) drawHeldWeapon(held, sheet, frame);
   ctx.restore();
 }
 
