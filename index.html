@@ -502,6 +502,7 @@ const player = {
   onGround: true,
   ducking: false,
   runPhase: 0,
+  duckTime: 0,               // how long he has been crouched, for the duck animation
   attack: 0,                 // time left in the current sword swing
   attackCooldown: 0,
   swingId: 0,                // counts swings, so a shield blocks each swing only once
@@ -1627,6 +1628,7 @@ function update(dt) {
   // ducked drops him straight down instead of floating for a few frames
   if (player.onGround) player.y = GROUND_Y - player.h;
   if (player.onGround) player.runPhase += dt * speed / 24;
+  player.duckTime = player.ducking && player.onGround ? player.duckTime + dt : 0;
   player.attack = Math.max(0, player.attack - dt);
   player.attackCooldown = Math.max(0, player.attackCooldown - dt);
 
@@ -2512,7 +2514,12 @@ function heroFrame() {
     if (player.vy > 250) return ["fall", Math.floor(performance.now() / 90) % 4];
     return ["jump_peak", Math.floor(performance.now() / 120) % 3];
   }
-  if (player.ducking) return ["dash", 4];
+  if (player.ducking) {
+    // Drop into the crouch (frames 6, 5, 4), then rock between the two low poses while held
+    const t = player.duckTime;
+    if (t < 0.12) return ["dash", 6 - Math.floor(t / 0.04)];
+    return ["dash", Math.floor(t / 0.14) % 2 ? 5 : 4];
+  }
   if (player.attack > 0) {
     const t = 1 - player.attack / ATTACK_DURATION;
     return ["attack2", Math.min(7, Math.floor(t * 8))];
