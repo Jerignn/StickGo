@@ -462,7 +462,7 @@ function saveSkins() { localStorage.setItem("stickgo-skins", JSON.stringify(skin
 function equippedSkin() { return SWORD_SKINS[skinState.equipped] || SWORD_SKINS.starter; }
 
 // --- Game state ---
-let state = "ready";         // "ready" | "running" | "paused" | "dying" | "over"
+let state = "ready";         // "ready" | "countdown" | "running" | "paused" | "dying" | "over"
 let speed, score, distance, obstacles, clouds, groundBits, spawnTimer, lastTime;
 let runDiff = settings.difficulty;  // difficulty of the current run; settings changes apply next run
 let jumpBuffer = 0;          // time left on a remembered jump press
@@ -476,6 +476,11 @@ let popups = [];             // floating "+10" texts
 let wave = 1;
 let waveBanner = 0;          // time left showing the "WAVE n" banner
 const JUMP_OVER_BONUS = 10;
+const COUNTDOWN_WORDS = ["READY", "SET", "RUN!"];
+const COUNTDOWN_STEP = 0.8;  // s each word stays up
+const GO_BANNER_TIME = 0.6;  // s "RUN!" lingers once the run has started
+let countdown = 0, countdownStage = -1;
+let goBanner = 0;
 
 const player = {
   x: 80,
@@ -503,6 +508,7 @@ function reset() {
   jumpBuffer = 0;
   lastMilestone = 0;
   flashTime = 0;
+  goBanner = 0;
   player.y = GROUND_Y - player.standH;
   player.vy = 0;
   player.onGround = true;
@@ -578,10 +584,26 @@ function nextKey(obj, current) {
   return keys[(keys.indexOf(current) + 1) % keys.length];
 }
 
+// PLAY starts a short READY - SET - RUN! countdown; the run itself begins on "RUN!"
 function startGame() {
   reset();
-  state = "running";
+  state = "countdown";
+  countdown = 0;
+  countdownStage = -1;
   showMenu(null);
+}
+
+function updateCountdown(dt) {
+  countdown += dt;
+  const stage = Math.min(COUNTDOWN_WORDS.length - 1, Math.floor(countdown / COUNTDOWN_STEP));
+  if (stage !== countdownStage) {
+    countdownStage = stage;
+    [sfx.ready, sfx.ready, sfx.go][stage]();
+  }
+  if (countdown >= COUNTDOWN_STEP * COUNTDOWN_WORDS.length) {
+    state = "running";
+    goBanner = GO_BANNER_TIME;   // keep "RUN!" on screen for a moment after the start
+  }
 }
 
 function pauseGame() {
@@ -785,6 +807,7 @@ function invMessage(text) { document.getElementById("invMsg").textContent = text
 // Returns true if the game handled it, false to let the app close.
 window.stickgoBack = function () {
   if (state === "dying") return true;
+  if (state === "countdown") { goToMainMenu(); return true; }
   if (state === "running") { pauseGame(); return true; }
   if (menus.shop.classList.contains("open")) { showMenu("main"); return true; }
   if (menus.inventory.classList.contains("open")) { showMenu("main"); return true; }
@@ -888,7 +911,7 @@ function scheduleMusicStep(step, t) {
 }
 
 function musicTick() {
-  if (!audio || audio.state !== "running" || !settings.sound || !settings.music || (state !== "running" && state !== "ready")) {
+  if (!audio || audio.state !== "running" || !settings.sound || !settings.music || (state !== "running" && state !== "ready" && state !== "countdown")) {
     musicNext = 0;   // restart cleanly from the next beat once it can play again
     return;
   }
@@ -901,6 +924,8 @@ function musicTick() {
 }
 
 const sfx = {
+  ready: () => beep(520, 0.18, { type: "triangle", vol: 0.09 }),
+  go: () => { beep(1040, 0.35, { vol: 0.08 }); beep(1560, 0.35, { type: "triangle", vol: 0.07 }); },
   jump: () => beep(500, 0.12, { slideTo: 900 }),
   point: () => { beep(880, 0.08); beep(1320, 0.14, { delay: 0.09 }); },
   hit: () => beep(240, 0.4, { type: "sawtooth", vol: 0.08, slideTo: 50 }),
@@ -3081,6 +3106,26 @@ function draw() {
     ctx.globalAlpha = 1;
   }
 
+  // READY - SET - RUN!: each word pops in big, then "RUN!" fades out over the first moments of the run
+  if (state === "countdown" || goBanner > 0) {
+    const inCountdown = state === "countdown";
+    const stage = inCountdown ? countdownStage : COUNTDOWN_WORDS.length - 1;
+    const age = inCountdown ? (countdown % COUNTDOWN_STEP) : COUNTDOWN_STEP + GO_BANNER_TIME - goBanner;
+    const pop = 1 + 0.5 * Math.max(0, 1 - age / 0.15);
+    ctx.save();
+    ctx.globalAlpha = inCountdown ? 1 : Math.min(1, goBanner / 0.3);
+    ctx.translate(W / 2, 135);
+    ctx.scale(pop, pop);
+    ctx.textAlign = "center";
+    ctx.font = "bold 64px 'Courier New', monospace";
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = colors.sky;
+    ctx.strokeText(COUNTDOWN_WORDS[stage], 0, 0);
+    ctx.fillStyle = stage === COUNTDOWN_WORDS.length - 1 ? "#ff8a1f" : colors.ink;
+    ctx.fillText(COUNTDOWN_WORDS[stage], 0, 0);
+    ctx.restore();
+  }
+
   // Score (it turns gold for a moment every 100 points; it never blinks)
   ctx.fillStyle = flashTime > 0 ? GOLD_EDGE : colors.ink;
   ctx.font = "bold 20px 'Courier New', monospace";
@@ -3092,7 +3137,9 @@ function draw() {
 function loop(time) {
   const dt = Math.min(0.033, (time - (lastTime ?? time)) / 1000);
   lastTime = time;
+  if (state === "countdown") updateCountdown(dt);
   if (state === "running") {
+    if (goBanner > 0) goBanner -= dt;
     const steps = Math.ceil(dt / PHYSICS_STEP);
     for (let i = 0; i < steps && state === "running"; i++) update(dt / steps);
   }
