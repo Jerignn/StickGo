@@ -127,8 +127,8 @@
   /* Gold and high score sit in the top-right corner of the main menu */
   .menu-stats {
     position: absolute;
-    top: 4vh;
-    right: 4vw;
+    top: 2.5vh;
+    right: 2vw;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
@@ -137,22 +137,29 @@
   .stat {
     display: flex;
     align-items: center;
-    gap: 10px;
-    min-width: 150px;
+    gap: 8px;
+    min-width: 96px;
     box-sizing: border-box;
-    padding: 6px 14px;
+    padding: 4px 12px;
     border: 2px solid #ff8a1f;
     border-radius: 999px;
-    background: rgba(20, 12, 30, 0.6);
+    background: rgba(20, 12, 30, 0.7);
     box-shadow: 0 0 12px rgba(255, 110, 20, 0.45);
-    font: bold 18px "Courier New", monospace;
+    font: bold 16px "Courier New", monospace;
     text-shadow: 0 1px 2px #000;
   }
-  .stat .coin { width: 16px; height: 16px; margin: 0; box-shadow: 0 0 8px rgba(255, 211, 77, 0.8); }
+  .stat .coin { width: 14px; height: 14px; margin: 0; box-shadow: 0 0 8px rgba(255, 211, 77, 0.8); }
   .stat-value { margin-left: auto; letter-spacing: 1px; }
   .stat-gold .stat-value { color: #ffd34d; }
-  .stat-high .stat-value { color: #fff; }
-  .stat-label { color: #ff8a1f; font-size: 13px; letter-spacing: 2px; }
+  .stat-high {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0;
+    border-radius: 16px;
+    padding: 3px 12px 4px;
+  }
+  .stat-high .stat-value { margin-left: 0; color: #fff; line-height: 1.1; }
+  .stat-label { color: #ff8a1f; font-size: 10px; letter-spacing: 2px; }
   .stat-label small { color: #cbb7e0; font-size: 10px; letter-spacing: 1px; }
 
   /* Shop + inventory: same artwork as the main menu, dimmed so the cards stand out */
