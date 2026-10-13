@@ -654,6 +654,7 @@ function startGame() {
 
 function updateCountdown(dt) {
   countdown += dt;
+  player.runPhase += dt * 5.5;   // walking in place while the words count down
   const stage = Math.min(COUNTDOWN_WORDS.length - 1, Math.floor(countdown / COUNTDOWN_STEP));
   if (stage !== countdownStage) {
     countdownStage = stage;
@@ -2405,6 +2406,15 @@ function getPose(p = player) {
     lean = -0.85;
     legs = [[1.4 + 0.05 * s, 0.15], [-0.5, 1.7]];
     arms = [[1.9 + 0.1 * s, 0.4], [-1.6 - 0.1 * s, 0.5]];
+  } else if (p === player && state === "countdown") {
+    // Walk (READY / SET): upright, short relaxed steps, a gentle bob, arms swinging softly
+    lean = 0.08;
+    legs = [0, Math.PI].map((off) => {
+      const a = ph + off;
+      return [0.45 * Math.sin(a), 0.1 + 0.8 * Math.max(0, Math.cos(a - 0.5))];
+    });
+    arms = [0, Math.PI].map((off) => [-0.45 * Math.sin(ph + off), 0.35]);
+    lift = 1.5 * Math.max(0, -Math.cos(ph * 2));
   } else if (p.landT > 0) {
     // Landing: knees and hips absorb the drop
     lean = 0.6;
