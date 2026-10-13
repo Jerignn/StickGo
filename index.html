@@ -418,10 +418,8 @@
   <button data-action="btnSize" id="btnSizeBtn"></button>
   <button data-action="sound" id="soundBtn"></button>
   <button data-action="music" id="musicBtn"></button>
-  <button data-action="comfort" id="comfortBtn"></button>
   <button data-action="resetHigh" id="resetHighBtn">RESET HIGH SCORES</button>
   <button data-action="back">BACK</button>
-  <p id="comfortHint">COMFORT MODE: slower top speed, no screen shake, dark screen. Good if fast games make you dizzy.</p>
 </div>
 
 <div class="menu" id="overMenu">
@@ -454,7 +452,6 @@ resizeCanvas();
 const GROUND_Y = 250;
 
 // --- Tunable settings ---
-// Comfort Mode: a lower top speed, no screen shake, a dark screen and a quieter ground
 const GRAVITY = 2400;        // px/s^2
 const JUMP_VELOCITY = -780;  // px/s
 const JUMP_BUFFER = 0.1;     // s a jump press is remembered while still in the air
@@ -478,7 +475,7 @@ const BUTTON_SIZES = {
 };
 
 const settings = Object.assign(
-  { difficulty: "normal", btnSize: "medium", sound: true, music: true, comfort: false },
+  { difficulty: "normal", btnSize: "medium", sound: true, music: true },
   JSON.parse(localStorage.getItem("stickgo-settings") || "{}")
 );
 
@@ -494,6 +491,13 @@ if (oldHigh) {
   highScores[settings.difficulty] = Math.max(oldHigh, highScores[settings.difficulty] || 0);
   localStorage.setItem("stickgo-highs", JSON.stringify(highScores));
   localStorage.removeItem("stickgo-high");
+}
+// One-time wipe of every saved high score. Bump the number in HIGH_RESET_ID to wipe them again.
+const HIGH_RESET_ID = "1";
+if (localStorage.getItem("stickgo-high-reset") !== HIGH_RESET_ID) {
+  for (const key of Object.keys(highScores)) delete highScores[key];
+  localStorage.removeItem("stickgo-highs");
+  localStorage.setItem("stickgo-high-reset", HIGH_RESET_ID);
 }
 function high(diff) { return highScores[diff] || 0; }
 
@@ -685,7 +689,6 @@ function refreshSettingsLabels() {
     `BUTTON SIZE: ${BUTTON_SIZES[settings.btnSize].label}`;
   document.getElementById("soundBtn").textContent = `SOUND FX: ${settings.sound ? "ON" : "OFF"}`;
   document.getElementById("musicBtn").textContent = `MUSIC: ${settings.music ? "ON" : "OFF"}`;
-  document.getElementById("comfortBtn").textContent = `COMFORT MODE: ${settings.comfort ? "ON" : "OFF"}`;
   document.getElementById("resetHighBtn").textContent =
     resetArmed ? "TAP AGAIN TO CONFIRM" : "RESET HIGH SCORES";
   document.documentElement.style.setProperty("--btn-size", BUTTON_SIZES[settings.btnSize].size);
@@ -764,11 +767,6 @@ const menuActions = {
   },
   btnSize: () => {
     settings.btnSize = nextKey(BUTTON_SIZES, settings.btnSize);
-    saveSettings();
-    refreshSettingsLabels();
-  },
-  comfort: () => {
-    settings.comfort = !settings.comfort;
     saveSettings();
     refreshSettingsLabels();
   },
@@ -1993,7 +1991,6 @@ let colors;
 let night = 0;
 
 function nightLevel(s) {
-  if (settings.comfort) return 1;   // Comfort Mode keeps the screen dark instead of bright white
   const p = s % 1000;
   return Math.max(0, Math.min(1, (p - 650) / 50, (1000 - p) / 50));
 }
@@ -2753,9 +2750,9 @@ function drawStickman() {
   const cx = player.x + player.w / 2, feet = player.y + player.h;
   heroFlash = null;
   if (fr.flash) {
-    // Flash frames (the ultimate's) fill the whole screen; Comfort Mode skips them
-    if (!settings.comfort) { heroFlash = fr; return; }
-    fr = stateFrame(HS.idle, 0);
+    // Flash frames (the ultimate's) fill the whole screen
+    heroFlash = fr;
+    return;
   }
   drawSkinSlash(cx, feet);
   ctx.save();
@@ -2948,7 +2945,7 @@ function draw() {
 
   ctx.save();
   if (shakeTime > 0) {
-    const m = shakeTime * 16 * (settings.comfort ? 0 : 0.6);
+    const m = shakeTime * 16 * 0.6;
     ctx.translate((Math.random() - 0.5) * m, (Math.random() - 0.5) * m);
   }
 
@@ -2961,10 +2958,7 @@ function draw() {
   ctx.lineWidth = 2;
   line(0, GROUND_Y, W, GROUND_Y);
   ctx.fillStyle = colors.ink;
-  // Comfort Mode draws fewer, fainter ground specks: they're a busy pattern at high speed
-  if (settings.comfort) ctx.fillStyle = colors.inkBack;
-  const specks = settings.comfort ? 14 : groundBits.length;
-  for (let i = 0; i < specks; i++) ctx.fillRect(groundBits[i].x, groundBits[i].y, groundBits[i].w, 2);
+  for (let i = 0; i < groundBits.length; i++) ctx.fillRect(groundBits[i].x, groundBits[i].y, groundBits[i].w, 2);
 
   for (const c of corpses) drawCorpse(c);
   portals.forEach(drawPortal);
