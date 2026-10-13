@@ -6,13 +6,13 @@
 <title>StickGo</title>
 <style>
   /* --sky and --ink are updated by the game for the day/night cycle */
-  :root { --btn-size: 18vh; --sky: #f7f7f7; --ink: #535353; }
+  :root { --btn-size: 18vh; --gw: min(100vw, 300vh);   /* --gw: the game's on-screen width */ --sky: #f7f7f7; --ink: #535353; }
   html, body {
     margin: 0;
     height: 100%;
     background: var(--sky);
     display: flex;
-    align-items: center;
+    align-items: flex-start;   /* game sticks to the top; spare height goes below it */
     justify-content: center;
     font-family: "Courier New", monospace;
     user-select: none;
@@ -21,9 +21,10 @@
   }
   #game {
     /* Keep the 3:1 shape and fill as much of the screen as possible */
-    width: min(100vw, 300vh);
-    height: min(100vh, 33.333vw);
+    width: var(--gw);
+    height: calc(var(--gw) / 3);
     background: var(--sky);
+    image-rendering: pixelated;
   }
   .btn {
     position: fixed;
@@ -88,7 +89,7 @@
   /* Computers get the same hint as one line of keys along the bottom */
   #keyHint {
     position: fixed;
-    bottom: 1.5vh;
+    top: calc(var(--gw) / 3 + 14px);   /* just under the game */
     left: 50%;
     transform: translateX(-50%);
     font: bold 14px "Courier New", monospace;
@@ -99,6 +100,7 @@
     transition: opacity 2s;
     pointer-events: none;
   }
+  body.playing #keyHint { opacity: 0.5; }   /* stays as a quiet reminder under the game */
   body.show-hint #keyHint { opacity: 0.9; transition: opacity 0.2s; }
   @media (hover: none), (pointer: coarse) { #keyHint { display: none; } }
   body:not(.playing) #skillRow { display: none; }
@@ -111,11 +113,13 @@
   body:not(.playing) #pauseBtn { display: none; }
 
   #pauseBtn {
+    /* Sits inside the game's top-left corner, scaled with it, next to the health bar */
     position: fixed;
-    top: 4vh;
-    left: 3vw;
-    width: 52px;
-    height: 52px;
+    top: calc(var(--gw) * 14 / 900);
+    left: calc((100vw - var(--gw)) / 2 + var(--gw) * 18 / 900);
+    width: max(48px, calc(var(--gw) * 48 / 900));
+    height: max(48px, calc(var(--gw) * 48 / 900));
+    box-sizing: border-box;
     border-radius: 12px;
     border: 3px solid var(--ink);
     background: rgba(128, 128, 128, 0.15);
@@ -127,7 +131,7 @@
     -webkit-tap-highlight-color: transparent;
     cursor: pointer;
   }
-  #pauseBtn span { width: 7px; height: 22px; background: var(--ink); border-radius: 2px; }
+  #pauseBtn span { width: 14%; height: 44%; background: var(--ink); border-radius: 2px; }
 
   .menu {
     position: fixed;
@@ -218,7 +222,7 @@
     font: bold 16px "Courier New", monospace;
     text-shadow: 0 1px 2px #000;
   }
-  .stat .coin { width: 14px; height: 14px; margin: 0; }
+  .stat .coin { width: 16px; height: 16px; margin: 0; }
   .stat-value { margin-left: auto; letter-spacing: 1px; }
   .stat-gold .stat-value { color: #ffd34d; }
   .stat-high {
@@ -243,12 +247,12 @@
   #shopGold { color: #ffd34d; font: bold 20px "Courier New", monospace; text-shadow: 0 1px 3px #000; }
   .coin {
     display: inline-block;
-    width: 11px;
-    height: 11px;
+    width: 16px;
+    height: 16px;
     margin-right: 6px;
-    background: #f5b921;
-    border: 2px solid #a8740a;
-    vertical-align: -1px;
+    background: var(--coin-img) center / 100% 100% no-repeat;   /* same pixel coin as in the game */
+    image-rendering: pixelated;
+    vertical-align: -3px;
   }
   .rarity-head {
     font: bold 13px "Courier New", monospace;
@@ -436,7 +440,8 @@
 <script src="animations.js"></script>
 <script>
 const canvas = document.getElementById("game");
-let ctx = canvas.getContext("2d");   // swapped briefly to draw the hero into the customize preview
+let ctx = canvas.getContext("2d");
+ctx.imageSmoothingEnabled = false;   // swapped briefly to draw the hero into the customize preview
 
 // Game world is always 900x300 units; the canvas is scaled to the screen's
 // real pixel density so lines stay crisp instead of being stretched.
@@ -1426,7 +1431,7 @@ function burst(x, y, n, color, power = 220) {
 function dropGold(x, y, count, popupY = y - 26) {
   popups.push({ x, y: popupY, t: 0, text: "+" + count, gold: true, life: 1.1 });
   for (let i = 0; i < count; i++) {
-    coins.push({ x, y, vx: (Math.random() - 0.5) * 340, vy: -300 - Math.random() * 240, spin: Math.random() * 6 });
+    coins.push({ x, y, vx: (Math.random() - 0.5) * 260, vy: -260 - Math.random() * 200, spin: Math.random() * 6, age: 0, hold: 0.3 + Math.random() * 0.25 });
   }
 }
 
@@ -1927,34 +1932,36 @@ function killEnemy(o, gold = 1 + Math.floor(Math.random() * 3)) {
   dropGold(o.x + o.w / 2, o.y + 20, gold, o.y - 6);
 }
 
+// Coins pop out of the enemy, then fly straight to the gold icon in the HUD and are counted there
+const COIN_TARGET = { x: W - 100, y: 56 };
+function collectCoin() {
+  runGold++;
+  totalGold++;
+  localStorage.setItem("stickgo-gold", totalGold);
+}
 function updateCoins(dt) {
-  const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
   for (const c of coins) {
     c.spin += dt * 8;
-    const dx = cx - c.x, dy = cy - c.y, d = Math.hypot(dx, dy) || 1;
-    if (d < 260) {
-      // Close coins are pulled in, so jumping over them doesn't miss them
-      c.x += (dx / d) * 700 * dt;
-      c.y += (dy / d) * 700 * dt;
-    } else {
+    c.age += dt;
+    if (c.age < c.hold) {   // the pop
       c.vy += GRAVITY * 0.6 * dt;
       c.x += c.vx * dt;
       c.y += c.vy * dt;
       if (c.y > GROUND_Y - 7) { c.y = GROUND_Y - 7; c.vy *= -0.45; c.vx *= 0.6; }
-    }
-    if (Math.abs(c.x - cx) < player.w / 2 + 14 && Math.abs(c.y - cy) < player.h / 2 + 14) {
-      c.taken = true;
-      runGold++;
-      totalGold++;
-      localStorage.setItem("stickgo-gold", totalGold);
-      sfx.coin();
+    } else {                // the flight, speeding up
+      const dx = COIN_TARGET.x - c.x, dy = COIN_TARGET.y - c.y, d = Math.hypot(dx, dy) || 1;
+      const step = (500 + (c.age - c.hold) * 3000) * dt;
+      if (d <= step + 6) { c.taken = true; collectCoin(); sfx.coin(); }
+      else { c.x += (dx / d) * step; c.y += (dy / d) * step; }
     }
   }
-  coins = coins.filter((c) => !c.taken && c.x > -20);
+  coins = coins.filter((c) => !c.taken);
 }
 
 function gameOver() {
   state = "over";
+  for (const c of coins) collectCoin();   // coins still in the air count too
+  coins = [];
   if (score > high(runDiff)) {
     highScores[runDiff] = score;
     localStorage.setItem("stickgo-highs", JSON.stringify(highScores));
@@ -1989,6 +1996,18 @@ const NIGHT = {
 const EYE_RED = "#ff2020";
 const SHIELD_METAL = "#8b97a3";
 const GOLD = "#f5b921", GOLD_EDGE = "#a8740a";
+// The pixel gold coin: drawn once, used by the game, the HUD and the menus (via --coin-img)
+const COIN_PX = 8;
+const coinCv = (() => {
+  const rows = ["..OOOO..", ".OLLGGO.", "OLLGGGGO", "OLGGDGGO", "OGGGDGGO", "OGGGGGDO", ".OGGGDO.", "..OOOO.."];
+  const pal = { O: "#7a4f06", G: GOLD, L: "#ffe27a", D: "#c98f10" };
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = COIN_PX;
+  const g = cv.getContext("2d");
+  rows.forEach((row, y) => [...row].forEach((ch, x) => { if (pal[ch]) { g.fillStyle = pal[ch]; g.fillRect(x, y, 1, 1); } }));
+  document.documentElement.style.setProperty("--coin-img", `url(${cv.toDataURL()})`);
+  return cv;
+})();
 const STARS = Array.from({ length: 24 }, () => ({ x: Math.random() * W, y: 10 + Math.random() * 130 }));
 let colors;
 let night = 0;
@@ -2668,24 +2687,19 @@ function drawPortal(p) {
   const cx = p.x, cy = GROUND_Y - 44, rx = 22 * k, ry = 52 * k, spin = p.t * 5;
   ctx.save();
   ctx.globalAlpha = k;
-  const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, ry * 1.3);
-  glow.addColorStop(0, "rgba(178, 123, 255, 0.55)");
-  glow.addColorStop(1, "rgba(178, 123, 255, 0)");
-  ctx.fillStyle = glow;
-  ctx.fillRect(cx - ry * 1.3, cy - ry * 1.3, ry * 2.6, ry * 2.6);
+  ctx.fillStyle = "rgba(178, 123, 255, 0.3)";
+  pixEllipse(cx, cy, rx + 9, ry + 9);
+  ctx.fillStyle = "#b27bff";
+  pixEllipse(cx, cy, rx, ry);
   ctx.fillStyle = "#1a0833";
-  ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.lineCap = "round";
-  ctx.strokeStyle = "#b27bff";
-  ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeStyle = "#e0c8ff";
-  ctx.lineWidth = 2;
-  for (let i = 0; i < 3; i++) {   // the swirl inside
+  pixEllipse(cx, cy, Math.max(0, rx - PX), Math.max(0, ry - PX));
+  ctx.fillStyle = "#e0c8ff";
+  for (let i = 0; i < 3; i++) {   // the swirl inside, as a trail of pixels
     const f = 0.8 - i * 0.22;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, rx * f, ry * f, 0, spin + i * 2.1, spin + i * 2.1 + 2.4);
-    ctx.stroke();
+    for (let j = 0; j < 7; j++) {
+      const ang = spin + i * 2.1 + j * 0.3;
+      ctx.fillRect(snap(cx + Math.cos(ang) * rx * f), snap(cy + Math.sin(ang) * ry * f), PX, PX);
+    }
   }
   ctx.restore();
 }
@@ -2714,7 +2728,7 @@ function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, color = look
   if (!img.complete || !img.naturalWidth) return;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.translate(cx, feet + 2 * sc);
+  ctx.translate(Math.round(cx), Math.round(feet + 2 * sc));
   if (rot) ctx.rotate(rot * face);
   ctx.scale(face * sc, sc);
   ctx.translate(-FRAME_W / 2, -FRAME_H);   // from here on, units are sprite pixels
@@ -2766,37 +2780,39 @@ function drawStickman() {
 
 // Arrows, bombs, blasts and ground shockwaves
 function drawProjectiles() {
-  ctx.lineCap = "round";
   for (const a of arrows) {
-    const sg = Math.sign(a.vx);
-    ctx.strokeStyle = colors.ink;
-    ctx.lineWidth = 2;
-    line(a.x - sg * 14, a.y, a.x + sg * 10, a.y);
+    const sg = Math.sign(a.vx), y = snap(a.y);
     ctx.fillStyle = colors.ink;
-    ctx.beginPath(); ctx.moveTo(a.x + sg * 17, a.y); ctx.lineTo(a.x + sg * 8, a.y - 3.5); ctx.lineTo(a.x + sg * 8, a.y + 3.5); ctx.fill();
+    ctx.fillRect(snap(Math.min(a.x - sg * 14, a.x + sg * 10)), y, 24, PX);          // shaft
+    ctx.fillRect(snap(a.x + sg * 10 - (sg < 0 ? PX : 0)), y - PX, PX, PX * 3);       // head
+    ctx.fillRect(snap(a.x + sg * 13 - (sg < 0 ? PX : 0)), y, PX, PX);                // tip
+    ctx.fillStyle = "#c9c9c9";
+    ctx.fillRect(snap(a.x - sg * 14 - (sg > 0 ? PX : 0)), y - PX, PX, PX * 3);       // fletching
   }
   for (const b of bombs) {
     const landed = b.t > 0.9;
     ctx.fillStyle = landed && Math.floor(b.t * 12) % 2 ? "#e02020" : "#222";   // blinks red before it goes off
-    ctx.beginPath(); ctx.arc(b.x, b.y, 6, 0, Math.PI * 2); ctx.fill();
+    pixEllipse(b.x, b.y, 6, 6);
     ctx.fillStyle = "#ffb02e";
-    ctx.beginPath(); ctx.arc(b.x + 4, b.y - 8, 1.8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(snap(b.x + 3), snap(b.y - 9), PX, PX);
   }
   for (const s of shocks) {
     ctx.globalAlpha = Math.max(0.2, 1 - s.dist / 360);
     ctx.fillStyle = "#ff9a2a";
-    ctx.beginPath();
-    ctx.moveTo(s.x - 15, GROUND_Y); ctx.lineTo(s.x, GROUND_Y - 24 + Math.sin(s.dist * 0.25) * 4); ctx.lineTo(s.x + 15, GROUND_Y);
-    ctx.fill();
+    const rows = Math.round((24 + Math.sin(s.dist * 0.25) * 4) / PX);
+    for (let r = 0; r < rows; r++) {
+      const half = 15 * (1 - r / rows);
+      ctx.fillRect(snap(s.x - half), GROUND_Y - PX * (r + 1), Math.max(PX, snap(half * 2)), PX);
+    }
     ctx.globalAlpha = 1;
   }
   for (const b of blasts) {
     const k = b.t / 0.35;
     ctx.globalAlpha = 1 - k;
     ctx.fillStyle = "#ff9a2a";
-    ctx.beginPath(); ctx.arc(b.x, GROUND_Y - 8, b.r * (0.4 + 0.6 * k), 0, Math.PI * 2); ctx.fill();
+    pixEllipse(b.x, GROUND_Y - 8, b.r * (0.4 + 0.6 * k), b.r * (0.4 + 0.6 * k));
     ctx.fillStyle = "#fff0a0";
-    ctx.beginPath(); ctx.arc(b.x, GROUND_Y - 8, b.r * 0.5 * (1 - k), 0, Math.PI * 2); ctx.fill();
+    pixEllipse(b.x, GROUND_Y - 8, b.r * 0.5 * (1 - k), b.r * 0.5 * (1 - k));
     ctx.globalAlpha = 1;
   }
 }
@@ -2816,7 +2832,7 @@ function drawFoeFrame(kind, row, col, cx, feet, face) {
   if (!img.complete || !img.naturalWidth) return;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.translate(cx, feet + 2 * sc);
+  ctx.translate(Math.round(cx), Math.round(feet + 2 * sc));
   ctx.scale(face * sc, sc);
   ctx.drawImage(img, col * FRAME_W, row * FRAME_H, FRAME_W, FRAME_H, -FRAME_W / 2, -FRAME_H, FRAME_W, FRAME_H);
   ctx.restore();
@@ -2867,11 +2883,8 @@ function drawCorpse(c) {
 
 function drawCoin(c) {
   // Spinning: the coin's width follows the spin
-  const w = Math.max(1.2, Math.abs(Math.cos(c.spin)) * 6);
-  ctx.fillStyle = GOLD;
-  ctx.strokeStyle = GOLD_EDGE;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.ellipse(c.x, c.y, w, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  const w = Math.max(2, Math.round(Math.abs(Math.cos(c.spin)) * 16 / 2) * 2);
+  ctx.drawImage(coinCv, Math.round(c.x - w / 2), Math.round(c.y - 8), w, 16);
 }
 
 // Distant skyline: two layers of building silhouettes scrolling slower than the ground.
@@ -2889,6 +2902,18 @@ function makeCityLayer(minW, maxW, minH, maxH) {
 const CITY_FAR = { speed: 0.04, items: makeCityLayer(30, 60, 50, 110), fill: "cityFar", windows: false };
 const CITY_NEAR = { speed: 0.1, items: makeCityLayer(40, 80, 40, 95), fill: "cityNear", windows: true };
 
+// Everything in the world is drawn on a chunky PX-sized grid so it reads as pixel art
+const PX = 3;
+const snap = (v) => Math.round(v / PX) * PX;
+// A filled ellipse built from PX-tall rows (never narrower than one pixel)
+function pixEllipse(cx, cy, rx, ry) {
+  if (ry < PX) { ctx.fillRect(snap(cx - rx), snap(cy), Math.max(PX, snap(rx * 2)), PX); return; }
+  for (let y = -ry; y <= ry; y += PX) {
+    const half = Math.max(PX / 2, Math.sqrt(Math.max(0, 1 - (y / ry) ** 2)) * rx);
+    ctx.fillRect(snap(cx - half), snap(cy + y), Math.max(PX, snap(half * 2)), PX);
+  }
+}
+
 function drawCityLayer(layer) {
   const shift = ((distance || 0) * layer.speed) % CITY_TILE;
   ctx.fillStyle = colors[layer.fill];
@@ -2897,7 +2922,10 @@ function drawCityLayer(layer) {
     for (const b of layer.items) {
       const x = ox + b.x;
       if (x > W || x + b.w < 0) continue;
-      ctx.fillRect(x, GROUND_Y - b.h, b.w, b.h);
+      const sx = snap(x), top = snap(GROUND_Y - b.h), sw = Math.max(PX * 4, snap(b.w));
+      ctx.fillRect(sx, top, sw, GROUND_Y - top);
+      ctx.fillRect(sx + PX * 2, top - PX, sw - PX * 4, PX);                       // stepped roof
+      if (b.seed > 0.7) ctx.fillRect(sx + snap(sw / 2), top - PX * 4, PX, PX * 3);   // antenna
     }
   }
   if (!layer.windows || night <= 0) return;
@@ -2909,9 +2937,9 @@ function drawCityLayer(layer) {
       const x = ox + b.x;
       if (x > W || x + b.w < 0) continue;
       let n = 0;
-      for (let wy = GROUND_Y - b.h + 8; wy < GROUND_Y - 10; wy += 14) {
-        for (let wx = x + 6; wx < x + b.w - 8; wx += 12, n++) {
-          if (((b.seed * 997 + n * 7919) % 5) < 2) ctx.fillRect(wx, wy, 4, 6);
+      for (let wy = GROUND_Y - b.h + 9; wy < GROUND_Y - 10; wy += 15) {
+        for (let wx = snap(x) + 6; wx < x + b.w - 8; wx += 12, n++) {
+          if (((b.seed * 997 + n * 7919) % 5) < 2) ctx.fillRect(wx, snap(wy), PX, PX * 2);
         }
       }
     }
@@ -2921,11 +2949,11 @@ function drawCityLayer(layer) {
 
 function drawCloud(c) {
   ctx.fillStyle = colors.cloud;
-  ctx.beginPath();
-  ctx.arc(c.x, c.y, 12, 0, Math.PI * 2);
-  ctx.arc(c.x + 16, c.y - 6, 16, 0, Math.PI * 2);
-  ctx.arc(c.x + 34, c.y, 12, 0, Math.PI * 2);
-  ctx.fill();
+  const x = snap(c.x), y = snap(c.y);
+  ctx.fillRect(x + 12, y - 18, 15, PX * 2);
+  ctx.fillRect(x + 6, y - 12, 30, PX * 2);
+  ctx.fillRect(x, y - 6, 48, PX * 2);
+  ctx.fillRect(x + 3, y, 42, PX);
 }
 
 function pad5(n) { return String(n).padStart(5, "0"); }
@@ -2939,10 +2967,10 @@ function draw() {
   if (night > 0) {
     ctx.globalAlpha = night;
     ctx.fillStyle = colors.ink;
-    for (const s of STARS) ctx.fillRect(s.x, s.y, 2, 2);
-    ctx.beginPath(); ctx.arc(W * 0.72, 55, 14, 0, Math.PI * 2); ctx.fill();
+    for (const s of STARS) ctx.fillRect(snap(s.x), snap(s.y), PX, PX);
+    pixEllipse(W * 0.72, 55, 15, 15);
     ctx.fillStyle = colors.sky;
-    ctx.beginPath(); ctx.arc(W * 0.72 + 7, 50, 12, 0, Math.PI * 2); ctx.fill();
+    pixEllipse(W * 0.72 + 9, 49, 12, 12);
     ctx.globalAlpha = 1;
   }
 
@@ -2957,11 +2985,12 @@ function draw() {
   clouds.forEach(drawCloud);
 
   // Ground
-  ctx.strokeStyle = colors.ink;
-  ctx.lineWidth = 2;
-  line(0, GROUND_Y, W, GROUND_Y);
   ctx.fillStyle = colors.ink;
-  for (let i = 0; i < groundBits.length; i++) ctx.fillRect(groundBits[i].x, groundBits[i].y, groundBits[i].w, 2);
+  ctx.fillRect(0, GROUND_Y, W, PX);
+  ctx.fillStyle = colors.inkBack;
+  ctx.fillRect(0, GROUND_Y + PX, W, PX);
+  ctx.fillStyle = colors.ink;
+  for (let i = 0; i < groundBits.length; i++) ctx.fillRect(snap(groundBits[i].x), snap(groundBits[i].y), Math.max(PX, snap(groundBits[i].w)), PX);
 
   for (const c of corpses) drawCorpse(c);
   portals.forEach(drawPortal);
@@ -2971,7 +3000,8 @@ function draw() {
   for (const p of sparks) {
     ctx.globalAlpha = Math.max(0, 1 - p.t / p.life);
     ctx.fillStyle = p.color;
-    ctx.fillRect(p.x - p.r / 2, p.y - p.r / 2, p.r, p.r);
+    const sz = Math.max(PX, snap(p.r));
+    ctx.fillRect(snap(p.x - sz / 2), snap(p.y - sz / 2), sz, sz);
   }
   ctx.globalAlpha = 1;
   drawStickman();
