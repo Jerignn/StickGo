@@ -1953,8 +1953,17 @@ function update(dt) {
   player.vy += GRAVITY * dt;
   player.y += player.vy * dt;
   if (player.y + player.h >= GROUND_Y) {
+    if (!player.onGround && !player.ducking) {   // touchdown: brief crouch and a puff of sparks
+      player.landT = 0.13;
+      burst(player.x + player.w / 2, GROUND_Y - 2, 6, "#ffb43a", 140);
+    }
     player.vy = 0;
     player.onGround = true;
+  }
+  player.landT = Math.max(0, (player.landT || 0) - dt);
+  // Sliding kicks up sparks from the front foot
+  if (player.ducking && player.onGround && Math.random() < dt * 40) {
+    burst(player.x + player.w / 2 + 22, GROUND_Y - 2, 1, "#ffb43a", 130);
   }
   // On the ground the feet stay on the floor, so ducking or landing while
   // ducked drops him straight down instead of floating for a few frames
@@ -2382,17 +2391,30 @@ function getPose(p = player) {
   let lean, legs, arms;
 
   if (!p.onGround) {
-    // Jump: front knee driven up, back leg trailing, arms reaching
-    const t = Math.max(-1, Math.min(1, p.vy / 800));  // -1 rising .. 1 falling
-    lean = 0.15;
-    legs = [[1.2 - 0.3 * t, 1.9 - 0.4 * t], [-0.35 + 0.2 * t, 0.9]];
-    arms = [[2.3 - 0.4 * t, 0.5], [-0.9, 1.2]];
+    // Jump: rising = front knee tucked up, one fist punched skyward, back leg folded;
+    // falling = legs stretch down and apart, arms flung out for balance
+    const k = (Math.max(-1, Math.min(1, p.vy / 800)) + 1) / 2;  // 0 rising .. 1 falling
+    const mix = (a, b) => a + (b - a) * k;
+    lean = mix(0.1, 0.2);
+    legs = [[mix(1.1, 0.45), mix(1.8, 0.9)], [mix(-0.5, -0.55), mix(1.5, 0.7)]];
+    arms = [[mix(2.7, 2.0), mix(0.3, 0.4)], [mix(-1.0, -1.4), mix(1.0, 0.6)]];
   } else if (p.ducking) {
-    // Low crouch-run, leaning far forward
-    const s = Math.sin(ph);
-    lean = 1.15;
-    legs = [[0.9 + 0.45 * s, 1.9], [0.9 - 0.45 * s, 1.9]];
-    arms = [[1.1 - 0.4 * s, 1.3], [1.1 + 0.4 * s, 1.3]];
+    // Slide: body low and leaning back, front leg stretched out along the ground,
+    // back leg folded under, arms thrown out for balance
+    const s = Math.sin(ph * 0.5);
+    lean = -0.85;
+    legs = [[1.4 + 0.05 * s, 0.15], [-0.5, 1.7]];
+    arms = [[1.9 + 0.1 * s, 0.4], [-1.6 - 0.1 * s, 0.5]];
+  } else if (p.landT > 0) {
+    // Landing: knees and hips absorb the drop
+    lean = 0.6;
+    legs = [[1.0, 2.0], [0.2, 1.9]];
+    arms = [[1.3, 0.8], [-0.6, 0.8]];
+  } else if (p.attack > 0) {
+    // Lunge: deep front knee, back leg driving, body leaning into the cut
+    lean = 0.5;
+    legs = [[1.0, 0.9], [-0.7, 0.2]];
+    arms = [[0, 0], [0.8, 1.0]];
   } else {
     // Run cycle: thighs swing in opposite phase, the knee folds most while
     // the leg is swinging forward, arms swing opposite to the legs
@@ -2513,11 +2535,14 @@ function drawSword(pts, swinging) {
     let tipAngle = Math.atan2(tip.x - sh.x, tip.y - sh.y);
     if (tipAngle < 0) tipAngle += Math.PI * 2;  // the swing starts past straight up
     const now = Math.PI / 2 - tipAngle;         // limb() angle -> canvas arc angle
-    const from = Math.max(Math.PI / 2 - (SWING_FROM + 0.15), now - 1.4);
-    ctx.globalAlpha = 0.35;
-    ctx.strokeStyle = skin.glow || skin.blade || colors.blade;
-    ctx.lineWidth = 7;
+    const from = Math.max(Math.PI / 2 - (SWING_FROM + 0.15), now - 2.1);
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = skin.glow || "#7fd4ff";
+    ctx.shadowColor = skin.glow || "#7fd4ff";
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 9;
     ctx.beginPath(); ctx.arc(sh.x, sh.y, r, from, now); ctx.stroke();
+    ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
   }
   drawBlade(ctx, hand, angle, skin);
