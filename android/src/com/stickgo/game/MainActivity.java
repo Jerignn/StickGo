@@ -20,6 +20,7 @@ public class MainActivity extends Activity {
         webView.setBackgroundColor(Color.parseColor("#f7f7f7"));
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
+        settings.setMediaPlaybackRequiresUserGesture(false);   // let the menu music start without a tap
         settings.setDomStorageEnabled(true); // needed for the saved high score
         webView.loadUrl("file:///android_asset/index.html");
 

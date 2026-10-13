@@ -853,7 +853,7 @@ function scheduleMusicStep(step, t) {
 }
 
 function musicTick() {
-  if (!audio || audio.state !== "running" || !settings.sound || !settings.music || state !== "running") {
+  if (!audio || audio.state !== "running" || !settings.sound || !settings.music || (state !== "running" && state !== "ready")) {
     musicNext = 0;   // restart cleanly from the next beat once it can play again
     return;
   }
