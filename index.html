@@ -156,15 +156,18 @@
   }
   .menu button:active { background: #444855; }
   #settingsMenu {
-    flex-direction: row;
-    flex-wrap: wrap;
+    display: none;
+    grid-template-columns: repeat(2, minmax(0, 300px));
     align-content: center;
     justify-content: center;
     gap: 12px 14px;
     padding: 0 5vw;
     box-sizing: border-box;
   }
-  #settingsMenu h1, #settingsMenu p { flex-basis: 100%; text-align: center; margin: 0; }
+  #settingsMenu.open { display: grid; }
+  #settingsMenu h1 { grid-column: 1 / -1; text-align: center; margin: 0 0 4px; }
+  #settingsMenu button { min-width: 0; width: 100%; }
+  #settingsMenu button[data-action="back"] { grid-column: 1 / -1; justify-self: center; width: 50%; }
 
   /* Main menu: full-screen artwork (it already has the logo) with buttons on the left */
   #mainMenu {
