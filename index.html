@@ -48,7 +48,43 @@
   /* Left thumb walks, right thumb attacks */
   #leftBtn { left: 4vw; font-size: 28px; }
   #rightBtn { left: calc(7vw + max(var(--btn-size), 64px)); font-size: 28px; }
-  #attackBtn { right: 4vw; font-size: 14px; }
+  /* Right thumb: jump and attack side by side, dash above them */
+  #jumpBtn { right: 4vw; font-size: 22px; }
+  #attackBtn { right: calc(7vw + max(var(--btn-size), 64px)); font-size: 14px; }
+  #dashBtn { right: 4vw; bottom: calc(10vh + max(var(--btn-size), 64px)); font-size: 30px; }
+  #dashBtn.cooling { opacity: 0.35; }
+  /* A small caption under a button says what it does; it fades out a few seconds into the run */
+  .btn[data-cap]::after {
+    content: attr(data-cap);
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    font: bold 11px "Courier New", monospace;
+    letter-spacing: 1px;
+    white-space: nowrap;
+    color: var(--ink);
+    opacity: 0;
+    transition: opacity 2s;
+    pointer-events: none;
+  }
+  body.show-hint .btn[data-cap]::after { opacity: 1; transition: opacity 0.2s; }
+  /* Computers get the same hint as one line of keys along the bottom */
+  #keyHint {
+    position: fixed;
+    bottom: 1.5vh;
+    left: 50%;
+    transform: translateX(-50%);
+    font: bold 14px "Courier New", monospace;
+    letter-spacing: 1px;
+    white-space: nowrap;
+    color: var(--ink);
+    opacity: 0;
+    transition: opacity 2s;
+    pointer-events: none;
+  }
+  body.show-hint #keyHint { opacity: 0.9; transition: opacity 0.2s; }
+  @media (hover: none), (pointer: coarse) { #keyHint { display: none; } }
   /* Hide the buttons on computers with a mouse; keyboard is used there */
   @media (hover: hover) and (pointer: fine) {
     .btn { display: none; }
@@ -286,9 +322,12 @@
 </head>
 <body>
 <canvas id="game" width="900" height="300"></canvas>
-<div class="btn" id="leftBtn">&#9664;</div>
-<div class="btn" id="rightBtn">&#9654;</div>
+<div class="btn" id="leftBtn" data-cap="WALK">&#9664;</div>
+<div class="btn" id="rightBtn" data-cap="WALK">&#9654;</div>
+<div class="btn" id="jumpBtn" data-cap="JUMP">&#9650;</div>
 <div class="btn" id="attackBtn">ATTACK</div>
+<div class="btn" id="dashBtn" data-cap="DASH">&raquo;</div>
+<div id="keyHint">A / D  WALK &nbsp;&middot;&nbsp; W  JUMP &nbsp;&middot;&nbsp; SPACE  ATTACK &nbsp;&middot;&nbsp; SHIFT  DASH</div>
 <div id="pauseBtn" aria-label="Pause"><span></span><span></span></div>
 
 <div class="menu" id="mainMenu">
@@ -391,6 +430,12 @@ const GROUND_Y = 250;
 // --- Tunable settings ---
 // Comfort Mode: a lower top speed, no screen shake, a dark screen and a quieter ground
 const GRAVITY = 2400;        // px/s^2
+const JUMP_VELOCITY = -780;  // px/s
+const JUMP_BUFFER = 0.1;     // s a jump press is remembered while still in the air
+const DASH_DIST = 150;       // px a dash covers
+const DASH_TIME = 0.16;      // s a dash lasts (he can't be hurt during it)
+const DASH_COOLDOWN = 2;     // s before he can dash again
+const HINT_TIME = 8;         // s the control labels stay on screen before they've faded
 const ATTACK_DURATION = 0.25;  // s a sword swing lasts (and can hit for)
 const ATTACK_COOLDOWN = 0.1;   // s after a swing before the next one
 
@@ -548,6 +593,10 @@ const player = {
   ducking: false,
   runPhase: 0,
   facing: 1,                 // 1 = looking right, -1 = left
+  dash: 0,                   // time left in the current dash
+  dashDir: 1,
+  dashCooldown: 0,
+  landT: 0,                  // time left in the landing crouch
   moving: false,
   hp: 100,
   hurt: 0,                   // time left before he can be hurt again
@@ -567,6 +616,10 @@ function reset() {
   distance = 0;
   obstacles = [];
   foes = [];
+  portals = [];
+  ghosts = [];
+  ghostTimer = jumpBuffer = hintTimer = 0;
+  document.body.classList.remove("show-hint");
   kills = 0;
   waveToSpawn = waveTotal = 0;
   spawnTimer = 1;
@@ -581,6 +634,9 @@ function reset() {
   player.moving = false;
   player.hp = PLAYER_MAX_HP;
   player.hurt = 0;
+  player.dash = 0;
+  player.dashCooldown = 0;
+  player.landT = 0;
   player.attack = 0;
   player.attackCooldown = 0;
   coins = [];
@@ -673,6 +729,8 @@ function updateCountdown(dt) {
   if (countdown >= COUNTDOWN_STEP * COUNTDOWN_WORDS.length) {
     state = "running";
     startWave(1);
+    hintTimer = HINT_TIME;
+    document.body.classList.add("show-hint");
   }
 }
 
@@ -1322,10 +1380,14 @@ const held = { left: false, right: false };        // keyboard
 const touchHeld = { left: false, right: false };   // on-screen buttons
 const MOVE_KEYS = { KeyA: "left", ArrowLeft: "left", KeyD: "right", ArrowRight: "right" };
 const ATTACK_KEYS = ["Space", "KeyX", "KeyF", "KeyJ"];
+const JUMP_KEYS = ["KeyW", "ArrowUp"];
+const DASH_KEYS = ["ShiftLeft", "ShiftRight", "KeyK", "KeyL"];
 
 const leftBtn = document.getElementById("leftBtn");
 const rightBtn = document.getElementById("rightBtn");
 const attackBtn = document.getElementById("attackBtn");
+const jumpBtn = document.getElementById("jumpBtn");
+const dashBtn = document.getElementById("dashBtn");
 const pauseBtn = document.getElementById("pauseBtn");
 
 function releaseInput() {
@@ -1333,10 +1395,27 @@ function releaseInput() {
   leftBtn.classList.remove("pressed");
   rightBtn.classList.remove("pressed");
   attackBtn.classList.remove("pressed");
+  jumpBtn.classList.remove("pressed");
+  dashBtn.classList.remove("pressed");
+}
+
+function jump() {
+  if (state === "running") jumpBuffer = JUMP_BUFFER;
+}
+
+// Dash: a quick burst the way he's walking (or facing). He can't be hurt while it lasts.
+function dash() {
+  if (state !== "running" || player.dash > 0 || player.dashCooldown > 0) return;
+  player.dash = DASH_TIME;
+  player.dashCooldown = DASH_COOLDOWN;
+  player.dashDir = inputDir() || player.facing;
+  player.facing = player.dashDir;
+  player.attack = 0;
+  sfx.dash();
 }
 
 function attack() {
-  if (state !== "running" || player.attackCooldown > 0) return;
+  if (state !== "running" || player.attackCooldown > 0 || player.dash > 0) return;
   player.attack = ATTACK_DURATION;
   player.attackCooldown = ATTACK_DURATION + ATTACK_COOLDOWN;
   player.swingId++;
@@ -1352,6 +1431,14 @@ document.addEventListener("keydown", (e) => {
   if (MOVE_KEYS[e.code]) {
     e.preventDefault();
     held[MOVE_KEYS[e.code]] = true;
+  }
+  if (JUMP_KEYS.includes(e.code)) {
+    e.preventDefault();
+    jump();
+  }
+  if (DASH_KEYS.includes(e.code) && !e.repeat) {
+    e.preventDefault();
+    dash();
   }
   if (ATTACK_KEYS.includes(e.code)) {
     e.preventDefault();
@@ -1396,6 +1483,16 @@ attackBtn.addEventListener("pointerdown", (e) => {
 });
 for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
   attackBtn.addEventListener(ev, () => attackBtn.classList.remove("pressed"));
+}
+for (const [btn, action] of [[jumpBtn, jump], [dashBtn, dash]]) {
+  btn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    btn.classList.add("pressed");
+    action();
+  });
+  for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
+    btn.addEventListener(ev, () => btn.classList.remove("pressed"));
+  }
 }
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 
@@ -1442,6 +1539,9 @@ const FOES = {
   brute: { look: "brute", scale: 1.6, w: 42, h: 96, hp: 3, speed: 65, dmg: 25, windup: 0.75, gold: [8, 10], pts: 40, reach: 56 }
 };
 let foes = [];                 // enemies on the field
+let portals = [];              // purple gates the enemies step out of
+let ghosts = [];               // fading afterimages left by a dash
+let ghostTimer = 0, jumpBuffer = 0, hintTimer = 0;
 let kills = 0;
 let waveToSpawn = 0, waveTotal = 0, waveClearTimer = -1;
 
@@ -1458,15 +1558,24 @@ function startWave(n) {
   sfx.wave();
 }
 
-function spawnFoe() {
+// A portal opens at one of the two edges; half a second later an enemy steps out of it
+function openPortal() {
   const pBrute = wave >= 3 ? Math.min(0.22, 0.05 + 0.03 * wave) : 0;
   const pNinja = wave >= 2 ? Math.min(0.4, 0.1 + 0.05 * wave) : 0;
   const r = Math.random();
   const kind = r < pBrute ? "brute" : r < pBrute + pNinja ? "ninja" : "grunt";
-  const d = FOES[kind], fromLeft = Math.random() < 0.5;
+  const fromLeft = Math.random() < 0.5;
+  portals.push({ x: fromLeft ? 52 : W - 52, fromLeft, kind, t: 0, spawned: false });
+  sfx.warn();
+}
+
+function spawnFoe(portal) {
+  const kind = portal.kind, fromLeft = portal.fromLeft;
+  const d = FOES[kind];
+  burst(portal.x, GROUND_Y - 40, 10, "#b27bff", 200);
   foes.push(person({
-    type: kind, kind, look: d.look, scale: d.scale || undefined,
-    x: fromLeft ? -d.w - 20 : W + 20, y: GROUND_Y - d.h, w: d.w, h: d.h,
+    type: kind, kind, look: d.look, scale: d.scale || undefined, age: 0,
+    x: portal.x - d.w / 2, y: GROUND_Y - d.h, w: d.w, h: d.h,
     hp: d.hp, maxHp: d.hp, reach: d.reach, speed: d.speed * DIFF_MUL[runDiff] * (0.9 + Math.random() * 0.2),
     dir: fromLeft ? 1 : -1, ai: "walk", timer: 0, stagger: 0, flash: 0
   }));
@@ -1478,6 +1587,7 @@ function updateFoes(dt) {
     const ocx = o.x + o.w / 2, dx = pcx - ocx;
     o.stagger = Math.max(0, o.stagger - dt);
     o.flash = Math.max(0, o.flash - dt);
+    o.age += dt;
     o.timer += dt;
     if (o.ai === "walk") {
       o.dir = dx >= 0 ? 1 : -1;
@@ -1497,7 +1607,8 @@ function updateFoes(dt) {
     } else if (o.ai === "windup") {
       if (o.timer >= FOES[o.kind].windup) {
         o.ai = "strike"; o.timer = 0;
-        if (Math.abs(dx) < o.reach + 14) hurtPlayer(o);
+        // A jump clears the swing; so does being somewhere else when it lands
+        if (Math.abs(dx) < o.reach + 14 && player.y + player.h > GROUND_Y - 30) hurtPlayer(o);
       }
     } else if (o.ai === "strike") {
       o.attack = Math.max(0, ATTACK_DURATION - o.timer);
@@ -1509,7 +1620,7 @@ function updateFoes(dt) {
 }
 
 function hurtPlayer(o) {
-  if (player.hurt > 0 || state !== "running") return;
+  if (player.hurt > 0 || player.dash > 0 || state !== "running") return;
   player.hp -= FOES[o.kind].dmg;
   player.hurt = HURT_TIME;
   shakeTime = Math.max(shakeTime, 0.2);
@@ -1538,6 +1649,7 @@ function swordHits() {
     if (o.dead || o.hitSwing === player.swingId) continue;
     const ahead = (o.x + o.w / 2 - pcx) * f;   // how far in front of him it stands
     if (ahead < -10 || ahead > REACH + o.w / 2) continue;
+    if (player.y + player.h < GROUND_Y - 70) continue;   // too high above them to reach
     o.hitSwing = player.swingId;
     o.hp--;
     if (o.hp <= 0) {
@@ -1562,12 +1674,53 @@ function swordHits() {
 function update(dt) {
   // Walking: slower while swinging; he turns to face the way he walks
   const dir = inputDir();
-  player.moving = dir !== 0;
-  if (dir) {
+  player.moving = dir !== 0 && player.dash <= 0;
+  if (player.dash > 0) {
+    player.x = Math.max(8, Math.min(W - 8 - player.w, player.x + player.dashDir * (DASH_DIST / DASH_TIME) * dt));
+    player.dash = Math.max(0, player.dash - dt);
+    ghostTimer -= dt;
+    if (ghostTimer <= 0) {   // blue afterimages trail behind him
+      const pts = getPose();
+      ghosts.push({ pts, axis: pts.hip.x, facing: player.facing, t: 0 });
+      ghostTimer = 0.025;
+    }
+  } else if (dir) {
     if (player.attack <= 0) player.facing = dir;
     const sp = PLAYER_SPEED * (player.attack > 0 ? 0.45 : 1);
     player.x = Math.max(8, Math.min(W - 8 - player.w, player.x + dir * sp * dt));
     player.runPhase += dt * 11;
+  }
+  for (const g of ghosts) g.t += dt;
+  ghosts = ghosts.filter((g) => g.t < 0.25);
+
+  // Jump (a press just before landing still counts), gravity, landing
+  jumpBuffer -= dt;
+  if (jumpBuffer > 0 && player.onGround && player.dash <= 0) {
+    player.vy = JUMP_VELOCITY;
+    player.onGround = false;
+    jumpBuffer = 0;
+    sfx.jump();
+  }
+  if (player.dash <= 0) {
+    player.vy += GRAVITY * dt;
+    player.y += player.vy * dt;
+  }
+  if (player.y + player.h >= GROUND_Y) {
+    if (!player.onGround) {   // touchdown: a brief crouch and a puff of sparks
+      player.landT = 0.13;
+      burst(player.x + player.w / 2, GROUND_Y - 2, 6, "#ffb43a", 140);
+    }
+    player.vy = 0;
+    player.onGround = true;
+  }
+  player.landT = Math.max(0, player.landT - dt);
+  if (player.onGround) player.y = GROUND_Y - player.h;
+
+  player.dashCooldown = Math.max(0, player.dashCooldown - dt);
+  dashBtn.classList.toggle("cooling", player.dashCooldown > 0);
+  if (hintTimer > 0) {
+    hintTimer -= dt;
+    if (hintTimer <= 2) document.body.classList.remove("show-hint");   // then it fades over those last 2 s
   }
   player.hurt = Math.max(0, player.hurt - dt);
   player.attack = Math.max(0, player.attack - dt);
@@ -1577,12 +1730,12 @@ function update(dt) {
   // Waves: enemies trickle in until the wave is used up, then a short rest, then the next wave
   if (waveToSpawn > 0) {
     spawnTimer -= dt;
-    if (spawnTimer <= 0 && foes.length < Math.min(8, 3 + Math.floor(wave / 2))) {
-      spawnFoe();
+    if (spawnTimer <= 0 && foes.length + portals.length < Math.min(8, 3 + Math.floor(wave / 2))) {
+      openPortal();
       waveToSpawn--;
       spawnTimer = Math.max(0.6, 2.2 - 0.12 * wave) / DIFF_MUL[runDiff];
     }
-  } else if (foes.length === 0) {
+  } else if (foes.length === 0 && portals.every((p) => p.spawned)) {
     if (waveClearTimer < 0) {
       waveClearTimer = 2.5;
       score += 50;
@@ -1594,6 +1747,11 @@ function update(dt) {
       if (waveClearTimer <= 0) startWave(wave + 1);
     }
   }
+  for (const p of portals) {
+    p.t += dt;
+    if (!p.spawned && p.t >= 0.5) { p.spawned = true; spawnFoe(p); }
+  }
+  portals = portals.filter((p) => p.t < 1.4);
   updateFoes(dt);
 
   for (const p of popups) { p.t += dt; p.y -= 40 * dt; }
@@ -1835,7 +1993,12 @@ function getPose(p = player) {
   const ph = p.runPhase;
   let lean, legs, arms, lift = 0;
 
-  if (!p.onGround) {
+  if (p.dash > 0) {
+    // Dash: flat out, leaning right into it, one leg driving and one trailing
+    lean = 1.0;
+    legs = [[1.3, 0.35], [-1.15, 0.25]];
+    arms = [[1.7, 0.2], [-1.5, 0.2]];
+  } else if (!p.onGround) {
     // Jump: rising = front knee tucked up, one fist punched skyward, back leg folded;
     // falling = legs stretch down and apart, arms flung out for balance
     const k = (Math.max(-1, Math.min(1, p.vy / 800)) + 1) / 2;  // 0 rising .. 1 falling
@@ -2478,8 +2641,46 @@ function drawHero(pts, down = !!ragdoll) {
   drawHat(look.equipped.hat, h, pts.neck);
 }
 
+// A swirling purple gate: opens, holds while the enemy steps out, then closes
+function drawPortal(p) {
+  const open = Math.min(1, p.t / 0.4), shut = p.t > 1.0 ? Math.max(0, 1 - (p.t - 1.0) / 0.4) : 1;
+  const k = open * shut;
+  if (k <= 0) return;
+  const cx = p.x, cy = GROUND_Y - 44, rx = 22 * k, ry = 52 * k, spin = p.t * 5;
+  ctx.save();
+  ctx.globalAlpha = k;
+  const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, ry * 1.3);
+  glow.addColorStop(0, "rgba(178, 123, 255, 0.55)");
+  glow.addColorStop(1, "rgba(178, 123, 255, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(cx - ry * 1.3, cy - ry * 1.3, ry * 2.6, ry * 2.6);
+  ctx.fillStyle = "#1a0833";
+  ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#b27bff";
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = "#e0c8ff";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 3; i++) {   // the swirl inside
+    const f = 0.8 - i * 0.22;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx * f, ry * f, 0, spin + i * 2.1, spin + i * 2.1 + 2.4);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawStickman() {
   const pts = ragdoll ? ragdoll.points : getPose();
+  // Dash afterimages: blue silhouettes that fade
+  for (const g of ghosts) {
+    ctx.save();
+    ctx.globalAlpha = 0.45 * (1 - g.t / 0.25);
+    if (g.facing < 0) { ctx.translate(g.axis, 0); ctx.scale(-1, 1); ctx.translate(-g.axis, 0); }
+    drawFigure(g.pts, "#7fd4ff", "#7fd4ff", 4.6, HERO_HEAD);
+    ctx.restore();
+  }
   ctx.save();
   if (!ragdoll) {
     // He's drawn facing right; turn him around when he faces left
@@ -2620,6 +2821,7 @@ function drawEnemy(pts, alive, shield, o = {}) {
 function drawFoe(o) {
   const pts = enemyPose(o);
   ctx.save();
+  ctx.globalAlpha = Math.min(1, o.age / 0.25);   // fades in as it steps out of the portal
   if (o.dir === 1) {
     const cx = o.x + o.w / 2;
     ctx.translate(cx, 0);
@@ -2739,6 +2941,7 @@ function draw() {
   for (let i = 0; i < specks; i++) ctx.fillRect(groundBits[i].x, groundBits[i].y, groundBits[i].w, 2);
 
   for (const c of corpses) drawEnemy(c.points, false, false, c);
+  portals.forEach(drawPortal);
   for (const o of foes) drawFoe(o);
   coins.forEach(drawCoin);
   for (const p of sparks) {
@@ -2797,6 +3000,15 @@ function draw() {
   ctx.font = "bold 12px 'Courier New', monospace";
   ctx.textAlign = "left";
   ctx.fillText(`KILLS ${kills}`, 84, 52);
+  // The dash skill: a small bar that fills while it recharges
+  ctx.fillText("DASH", 84, 70);
+  ctx.fillStyle = colors.inkBack;
+  ctx.fillRect(126, 61, 70, 9);
+  ctx.fillStyle = player.dashCooldown > 0 ? "#8892a0" : "#4aa8ff";
+  ctx.fillRect(126, 61, 70 * (1 - player.dashCooldown / DASH_COOLDOWN), 9);
+  ctx.strokeStyle = colors.ink;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(126, 61, 70, 9);
 
   if (bossBanner) {
     ctx.globalAlpha = Math.min(1, bossBanner.t / 0.5);
