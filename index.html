@@ -168,7 +168,8 @@
 
   /* Main menu: full-screen artwork (it already has the logo) with buttons on the left */
   #mainMenu {
-    background: #1a1430 url("pictures/mainmenu.jpg") center 25% / cover no-repeat;
+    background: #1a1430 url("pictures/mainmenu_px.png") center 25% / cover no-repeat;
+    image-rendering: pixelated;
     align-items: flex-start;
     justify-content: flex-end;
     padding: 0 0 9vh 6vw;
@@ -178,10 +179,13 @@
     color: #fff;
     background: rgba(20, 12, 30, 0.6);
     border-color: #ff8a1f;
-    box-shadow: 0 0 12px rgba(255, 110, 20, 0.45);
-    text-shadow: 0 1px 2px #000;
+    border-radius: 0;   /* pixel style: square corners, a hard stepped shadow, no blur */
+    box-shadow: 4px 4px 0 #000, inset -3px -3px 0 rgba(0, 0, 0, 0.45), inset 3px 3px 0 rgba(255, 190, 120, 0.25);
+    text-shadow: 2px 2px 0 #000;
+    letter-spacing: 2px;
+    text-transform: uppercase;
   }
-  #mainMenu button:active, .store-menu button:active { background: rgba(255, 120, 30, 0.55); }
+  #mainMenu button:active, .store-menu button:active { background: rgba(255, 120, 30, 0.55); transform: translate(3px, 3px); box-shadow: 1px 1px 0 #000; }
   #mainMenu p, .store-menu p {
     color: #fff;
     text-shadow: 0 1px 3px #000, 0 0 6px #000;
@@ -205,20 +209,19 @@
     box-sizing: border-box;
     padding: 4px 12px;
     border: 2px solid #ff8a1f;
-    border-radius: 999px;
-    background: rgba(20, 12, 30, 0.7);
-    box-shadow: 0 0 12px rgba(255, 110, 20, 0.45);
+    border-radius: 0;
+    background: rgba(20, 12, 30, 0.8);
+    box-shadow: 3px 3px 0 #000;
     font: bold 16px "Courier New", monospace;
     text-shadow: 0 1px 2px #000;
   }
-  .stat .coin { width: 14px; height: 14px; margin: 0; box-shadow: 0 0 8px rgba(255, 211, 77, 0.8); }
+  .stat .coin { width: 14px; height: 14px; margin: 0; }
   .stat-value { margin-left: auto; letter-spacing: 1px; }
   .stat-gold .stat-value { color: #ffd34d; }
   .stat-high {
     flex-direction: column;
     align-items: flex-end;
     gap: 0;
-    border-radius: 16px;
     padding: 3px 12px 4px;
   }
   .stat-high .stat-value { margin-left: 0; color: #fff; line-height: 1.1; }
@@ -228,10 +231,11 @@
   /* Shop + inventory: same artwork as the main menu, dimmed so the cards stand out */
   .store-menu {
     background: linear-gradient(rgba(12, 8, 24, 0.62), rgba(12, 8, 24, 0.62)),
-                #1a1430 url("pictures/mainmenu.jpg") center 25% / cover no-repeat;
+                #1a1430 url("pictures/mainmenu_px.png") center 25% / cover no-repeat;
+    image-rendering: pixelated;
     gap: 8px;
   }
-  .store-menu h1 { color: #fff; font-size: 28px; margin: 0; text-shadow: 0 2px 4px #000; }
+  .store-menu h1 { color: #fff; font-size: 28px; margin: 0; text-shadow: 3px 3px 0 #000; }
   .shop-head { display: flex; align-items: baseline; gap: 28px; }
   #shopGold { color: #ffd34d; font: bold 20px "Courier New", monospace; text-shadow: 0 1px 3px #000; }
   .coin {
@@ -239,7 +243,6 @@
     width: 11px;
     height: 11px;
     margin-right: 6px;
-    border-radius: 50%;
     background: #f5b921;
     border: 2px solid #a8740a;
     vertical-align: -1px;
