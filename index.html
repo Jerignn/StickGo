@@ -282,6 +282,17 @@
   #lookItems .card button.cant { opacity: 0.55; }
   #lookMsg { min-height: 1.2em; color: #ffd34d; font-size: 13px; }
   #shopSections { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  /* Shop rows and the inventory wrap into rows and scroll when there are more weapons than fit */
+  #shopSections .shop-row, #invItems {
+    flex-wrap: wrap;
+    justify-content: center;
+    width: min(820px, 94vw);
+    max-height: calc(100vh - 170px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 8px 8px 4px;
+    box-sizing: border-box;
+  }
   .tabs { display: flex; gap: 8px; }
   .store-menu .tab {
     min-width: 0;
@@ -292,34 +303,24 @@
     box-shadow: none;
   }
   .store-menu .tab.active { background: var(--rar); color: #111; text-shadow: none; }
-  /* Inventory: wraps into rows and scrolls when there are more swords than fit */
-  #invItems {
-    flex-wrap: wrap;
-    justify-content: center;
-    max-width: 800px;
-    max-height: calc(100vh - 150px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 4px;
-  }
   #invMsg { min-height: 1.2em; color: #ffd34d; font-size: 13px; }
   /* Shop and inventory share one row on the main menu */
   .menu-pair { display: flex; gap: 10px; width: 240px; }
   #mainMenu .menu-pair button { min-width: 0; flex: 1; padding: 10px 6px; font-size: 15px; }
   .card {
     box-sizing: border-box;
-    width: 178px;
-    padding: 10px;
+    width: 150px;
+    padding: 8px;
     border: 3px solid var(--rar, #ff8a1f);
-    border-radius: 12px;
-    background: rgba(20, 12, 30, 0.7);
-    box-shadow: 0 0 12px var(--rar-glow, rgba(255, 110, 20, 0.35));
+    border-radius: 0;
+    background: rgba(20, 12, 30, 0.8);
+    box-shadow: 4px 4px 0 #000, inset 0 0 14px var(--rar-glow, rgba(255, 110, 20, 0.35));
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 4px;
   }
-  .card.equipped { border-color: #ffd34d; box-shadow: 0 0 18px rgba(255, 211, 77, 0.7); }
+  .card.equipped { border-color: #ffd34d; box-shadow: 4px 4px 0 #000, inset 0 0 18px rgba(255, 211, 77, 0.6); }
   .card canvas { width: 100%; height: auto; }
   .card .name {
     color: #fff;
@@ -526,8 +527,32 @@ const RARITIES = {
   rare:      { label: "RARE",      color: "#b266ff", glow: "rgba(178, 102, 255, 0.50)" },
   legendary: { label: "LEGENDARY", color: "#ffa930", glow: "rgba(255, 169, 48, 0.60)" }
 };
+// Skins with img are pixel-art pictures from pictures/weapons/ (cut by tools/cut_weapons.py);
+// slash = the SLASH_FX his basic attacks leave while it is equipped.
 const SWORD_SKINS = {
-  starter: { name: "STARTER SCYTHE", rarity: null, price: 0, blade: null, guard: null, len: 26, width: 3 }
+  starter: { name: "STARTER SCYTHE", rarity: null, price: 0, blade: null, guard: null, len: 26, width: 3 },
+  rusty:         { name: "RUSTY SABRE", rarity: "common", price: 100, img: "rusty" },
+  wooden:        { name: "WOODEN SWORD", rarity: "common", price: 100, img: "wooden" },
+  cleaver:       { name: "BUTCHER CLEAVER", rarity: "common", price: 150, img: "cleaver" },
+  cutlass:       { name: "BRASS CUTLASS", rarity: "common", price: 150, img: "cutlass" },
+  iron:          { name: "IRON SWORD", rarity: "common", price: 200, img: "iron" },
+  serrated:      { name: "SERRATED BLADE", rarity: "uncommon", price: 400, img: "serrated" },
+  frost_staff:   { name: "FROST STAFF", rarity: "uncommon", price: 450, img: "frost_staff" },
+  void_blade:    { name: "VOID SHARD", rarity: "uncommon", price: 500, img: "void_blade" },
+  vine:          { name: "VINE BLADE", rarity: "uncommon", price: 500, img: "vine" },
+  bone:          { name: "BONE REAPER", rarity: "uncommon", price: 600, img: "bone" },
+  inferno:       { name: "INFERNO EDGE", rarity: "rare", price: 1200, img: "inferno", slash: "crimson" },
+  shadow:        { name: "SHADOW FANG", rarity: "rare", price: 1300, img: "shadow", slash: "shadow" },
+  gale:          { name: "GALE CRESCENT", rarity: "rare", price: 1400, img: "gale", slash: "aero" },
+  glacier:       { name: "GLACIER SWORD", rarity: "rare", price: 1500, img: "glacier", slash: "frostbite" },
+  phoenix:       { name: "PHOENIX BLADE", rarity: "legendary", price: 4000, img: "phoenix", slash: "dragon" },
+  plasma:        { name: "PLASMA SABER", rarity: "legendary", price: 4000, img: "plasma", slash: "laser" },
+  nebula:        { name: "NEBULA SWORD", rarity: "legendary", price: 4500, img: "nebula", slash: "voidbringer" },
+  seraph:        { name: "SERAPH WING", rarity: "legendary", price: 5000, img: "seraph", slash: "sun" },
+  ember_feather: { name: "EMBER FEATHER", rarity: "legendary", price: 5000, img: "ember_feather", slash: "dragon" },
+  thunder:       { name: "THUNDER FANG", rarity: "legendary", price: 5500, img: "thunder", slash: "sun" },
+  toxic:         { name: "PLAGUE BLADE", rarity: "legendary", price: 5500, img: "toxic", slash: "voidbringer" },
+  gearblade:     { name: "CLOCKWORK BLADE", rarity: "legendary", price: 6000, img: "gearblade", slash: "crimson" }
 };
 const fmt = (n) => n.toLocaleString("en-US");
 const skinState = Object.assign(
@@ -817,7 +842,7 @@ function swordCard(id) {
     <div class="tag" style="color:${info.color}">${info.label}</div>
     <button></button>`;
   const canvas = card.querySelector("canvas");
-  if (skin.fx || skin.glow) canvas.dataset.anim = id;   // animated while the menu is open
+  if (skin.fx || skin.glow || skin.slash) canvas.dataset.anim = id;   // animated while the menu is open
   drawSwordPreview(canvas, skin);
   return card;
 }
@@ -2172,7 +2197,7 @@ function drawSword(pts, swinging) {
     if (tipAngle < 0) tipAngle += Math.PI * 2;  // the swing starts past straight up
     const now = Math.PI / 2 - tipAngle;         // limb() angle -> canvas arc angle
     const from = Math.max(Math.PI / 2 - (SWING_FROM + 0.15), now - 2.1);
-    const fx = SLASH_FX[skinState.equipped];
+    const fx = SLASH_FX[equippedSkin().slash];
     if (fx) {
       // Rare and legendary swords leave their own slash instead of the plain arc
       ctx.save();
@@ -2592,10 +2617,40 @@ function drawPixelScythe(canvas, g) {
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) g.drawImage(scytheRim, x + dx * k, y + dy * k, w, h);
   g.drawImage(SCYTHE_IMG, x, y, w, h);
 }
+// The pixel-art weapons, loaded once; the open shop or inventory redraws as each one arrives
+const WEAPON_IMGS = {};
+for (const skin of Object.values(SWORD_SKINS)) {
+  if (!skin.img || WEAPON_IMGS[skin.img]) continue;
+  const img = new Image();
+  img.src = `pictures/weapons/${skin.img}.png`;
+  img.onload = () => {
+    if (menus.shop.classList.contains("open")) refreshShop();
+    if (menus.inventory.classList.contains("open")) refreshInventory();
+  };
+  WEAPON_IMGS[skin.img] = img;
+}
+
+// A pixel weapon fitted to the card; rare and legendary ones float and glow in their rarity colour
+function drawWeaponImg(canvas, g, skin) {
+  const img = WEAPON_IMGS[skin.img];
+  if (!img.complete || !img.naturalWidth) return;
+  const k = Math.min(canvas.width / img.width, canvas.height / img.height) * 0.94;
+  const w = img.width * k, h = img.height * k;
+  const bob = skin.slash ? Math.round(Math.sin(performance.now() / 1000 * 3) * 3) : 0;
+  g.imageSmoothingEnabled = false;
+  if (skin.slash) {
+    g.shadowColor = RARITIES[skin.rarity].color;
+    g.shadowBlur = 10 + 6 * Math.sin(performance.now() / 1000 * 4);
+  }
+  g.drawImage(img, Math.round((canvas.width - w) / 2), Math.round((canvas.height - h) / 2) + bob, w, h);
+  g.shadowBlur = 0;
+}
+
 function drawSwordPreview(canvas, skin) {
   const g = canvas.getContext("2d");
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, canvas.width, canvas.height);
+  if (skin.img) { drawWeaponImg(canvas, g, skin); return; }
   if (!skin.blade && SCYTHE_IMG.complete && SCYTHE_IMG.naturalWidth) { drawPixelScythe(canvas, g); return; }
   const scale = canvas.width / 44;   // 44 units across, ~17 down
   g.setTransform(scale, 0, 0, scale, 0, 0);
@@ -2728,7 +2783,7 @@ function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, color = look
 
 // The slash effect of an equipped rare or legendary sword, drawn around his basic attacks
 function drawSkinSlash(cx, feet) {
-  const fx = SLASH_FX[skinState.equipped], a = player.act;
+  const fx = SLASH_FX[equippedSkin().slash], a = player.act;
   if (!fx || !a || !a.basic) return;
   const p = (player.actT - (a.hitT[0] - 0.06)) / 0.2;
   if (p <= 0 || p >= 1) return;
