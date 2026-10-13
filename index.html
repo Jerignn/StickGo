@@ -134,6 +134,33 @@
     text-shadow: 0 1px 3px #000, 0 0 6px #000;
   }
 
+  /* Gold and high score, top right of the main menu */
+  .stats {
+    position: absolute;
+    top: max(14px, 3vh);
+    right: max(16px, 3vw);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 160px;
+  }
+  .stat {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 5px 12px 5px 10px;
+    background: rgba(20, 12, 30, 0.68);
+    border: 2px solid #ff8a1f;
+    border-radius: 12px;
+    box-shadow: 0 0 12px rgba(255, 110, 20, 0.4);
+  }
+  .stat.gold { border-color: #f5b921; box-shadow: 0 0 12px rgba(245, 185, 33, 0.45); }
+  .stat small { display: block; font-size: 9px; letter-spacing: 1px; color: #cbbfdc; text-shadow: 0 1px 2px #000; }
+  .stat b { display: block; font-size: 18px; letter-spacing: 1px; color: #fff; text-shadow: 0 1px 3px #000; }
+  .stat.gold b { color: #ffd34d; }
+  .stat .coin { width: 20px; height: 20px; margin: 0; border-width: 3px; flex: none; }
+  .stat .trophy { width: 26px; text-align: center; font-size: 26px; line-height: 1; color: #ff8a1f; text-shadow: 0 0 8px rgba(255, 110, 20, 0.7); flex: none; }
+
   /* Shop + inventory: same artwork as the main menu, dimmed so the cards stand out */
   .store-menu {
     background: linear-gradient(rgba(12, 8, 24, 0.62), rgba(12, 8, 24, 0.62)),
@@ -232,8 +259,10 @@
     <button data-action="inventory">INVENTORY</button>
   </div>
   <button data-action="settings">SETTINGS</button>
-  <p id="highText"></p>
-  <p id="goldText"></p>
+  <div class="stats" id="mainStats">
+    <div class="stat gold"><span class="coin"></span><div><small>GOLD</small><b id="goldText"></b></div></div>
+    <div class="stat"><span class="trophy">&#9733;</span><div><small id="highLabel">HIGH SCORE</small><b id="highText"></b></div></div>
+  </div>
   <p>Jump: JUMP / SPACE &nbsp; Duck: hold DUCK / DOWN &nbsp; Attack: ATTACK / X</p>
 </div>
 
@@ -519,9 +548,10 @@ function showMenu(name) {
   for (const [key, el] of Object.entries(menus)) el.classList.toggle("open", key === name);
   document.body.classList.toggle("playing", name === null);
   if (name === "main") {
-    document.getElementById("highText").textContent =
-      `HIGH SCORE ${pad5(high(settings.difficulty))} (${DIFFICULTIES[settings.difficulty].label})`;
-    document.getElementById("goldText").textContent = `GOLD ${fmt(totalGold)}`;
+    document.getElementById("highLabel").textContent =
+      `HIGH SCORE · ${DIFFICULTIES[settings.difficulty].label}`;
+    document.getElementById("highText").textContent = pad5(high(settings.difficulty));
+    document.getElementById("goldText").textContent = fmt(totalGold);
   }
   if (name === "settings") refreshSettingsLabels();
   if (name === "shop") { shopMessage(""); refreshShop(); }
