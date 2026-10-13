@@ -2568,7 +2568,7 @@ function weaponImpact(o) {
   fx.impact();
   if (legend) {
     beep(70, 0.3, { type: "sine", vol: 0.12, slideTo: 35 });
-    shakeTime = Math.max(shakeTime, settings.comfort ? 0.08 : 0.16);
+    shakeTime = Math.max(shakeTime, 0.16);
   }
 }
 

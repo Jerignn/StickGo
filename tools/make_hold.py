@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw
 
 SHEETS = {"idle": 4, "run": 10, "jump": 3, "jump_peak": 3, "fall": 4, "dash": 11,
           "attack1": 10, "attack2": 8, "attack3": 10, "skill1": 9, "skill2": 19, "skill3": 25,
-          "start_skill3": 3, "hit1": 3, "hit3": 3}
+          "start_skill3": 3, "hit1": 3, "hit3": 3, "death": 10}
 W, H = 128, 64
 OUT = "pictures/hold"
 HELD_LEN = 36   # how long a held weapon is, in sprite pixels (about the scythe's length)
@@ -51,7 +51,8 @@ def haft_line(pix):
             if best is None or len(members) > len(best[2]): best = (a, off, members)
     return best
 
-def analyse(frame):
+def analyse(frame, loose=False):
+    """loose: the scythe may lie away from him (flung out of his hand when he dies)."""
     px = frame.load()
     black = {(x, y) for y in range(H) for x in range(W) if is_black(px[x, y])}
     body = {(x, y) for y in range(H) for x in range(W) if is_body(px[x, y])}
@@ -59,7 +60,7 @@ def analyse(frame):
     for g in components(black):
         if len(g) < 15: continue
         contact = [p for p in g if any((p[0] + dx, p[1] + dy) in body for dx in (-1, 0, 1) for dy in (-1, 0, 1))]
-        if contact: touching.append((len(g), g, contact))
+        if contact or loose: touching.append((len(g), g, contact))
     if not touching: return None, set()
     _, scythe, contact = max(touching)
     a, off, line = haft_line(scythe)
@@ -72,7 +73,7 @@ def analyse(frame):
     head, tail = (e1, e0) if mass(e1) >= mass(e0) else (e0, e1)
     # His hand: where the haft touches his body, nearest the handle end
     line_set = set(line)
-    grips = [p for p in contact if p in line_set] or contact
+    grips = [p for p in contact if p in line_set] or contact or [tail]
     grip = min(grips, key=lambda p: (p[0] - tail[0]) ** 2 + (p[1] - tail[1]) ** 2)
     ang = math.atan2(head[1] - grip[1], head[0] - grip[0])
     # Pieces of the haft cut off by his body (or his hand) lie on the same line: they go too
@@ -144,7 +145,10 @@ def main():
         grips = []
         for f in range(n):
             frame = src.crop((f * W, 0, (f + 1) * W, H))
-            grip, scythe = analyse(frame)
+            grip, scythe = analyse(frame, loose=name == "death")
+            if name == "death" and f >= 5 and scythe:   # once it has landed it lies flat, blade towards him
+                end = max(scythe, key=lambda p: (p[0], -p[1]))
+                grip = [end[0], end[1], round(math.pi, 3)]
             grips.append(grip)
             clean = frame.copy()
             cp = clean.load()
