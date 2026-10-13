@@ -470,7 +470,8 @@ const DASH_TIME = 0.16;      // s a dash lasts (he can't be hurt during it)
 const DASH_COOLDOWN = 2;     // s before he can dash again
 const HINT_TIME = 8;         // s the control labels stay on screen before they've faded
 const ATTACK_DURATION = 0.25;  // s a sword swing lasts (and can hit for)
-const ATTACK_COOLDOWN = 0.1;   // s after a swing before the next one
+const COMBO_RECOVERY = 0.35;   // s he is open after the 3rd swing before he can attack again
+const LIGHT_PUSH = 0.35;       // how much of the shove the first two swings keep (only the finisher staggers)
 
 // Speeds in px/s; gain is px/s added per second
 const DIFFICULTIES = {
@@ -611,6 +612,7 @@ const player = {
   lungeV: 0,
   combo: 0,                  // which swing of the 3-hit combo comes next
   comboTimer: 0,
+  recover: 0,                // time left before a basic attack can start again (after the finisher)
   cd: [0, 0, 0],             // cooldowns of skills 1, 2 and 3
   stun: 0,                   // time left flinching after a hit
   inv: 0,                    // time left where nothing can hurt him (dash, skills)
@@ -661,6 +663,7 @@ function reset() {
   player.actT = 0;
   player.combo = 0;
   player.comboTimer = 0;
+  player.recover = 0;
   player.cd = [0, 0, 0];
   player.stun = 0;
   player.inv = 0;
@@ -1794,12 +1797,14 @@ function dealHit(hit) {
       popups.push({ x: ocx, y: o.y - 10, t: 0, text: "BLOCK" });
       continue;
     }
-    hurtFoe(o, hit.dmg, f * hit.kb);
+    // Only the 3rd swing of the combo staggers; the first two just hurt, so enemies can still fight back
+    const light = player.act && player.act.basic && player.act !== COMBO[COMBO.length - 1];
+    hurtFoe(o, hit.dmg, f * hit.kb * (light ? LIGHT_PUSH : 1), !light);
   }
   foes = foes.filter((o) => !o.dead);
 }
 
-function hurtFoe(o, dmg, push) {
+function hurtFoe(o, dmg, push, stagger = true) {
   o.hp -= dmg;
   if (o.hp <= 0) {
     const d = FOES[o.kind];
@@ -1811,7 +1816,7 @@ function hurtFoe(o, dmg, push) {
   }
   const heavy = o.kind === "brute" || o.kind === "boss";
   o.x = Math.max(-10, Math.min(W + 10 - o.w, o.x + push * (heavy ? 0.3 : 1)));
-  if (o.kind !== "boss" && o.ai !== "charge") { o.stagger = heavy ? 0.2 : 0.4; o.ai = "walk"; o.timer = 0; o.attack = 0; o.draw = 0; }
+  if (stagger && o.kind !== "boss" && o.ai !== "charge") { o.stagger = heavy ? 0.2 : 0.4; o.ai = "walk"; o.timer = 0; o.attack = 0; o.draw = 0; }
   o.flash = 0.12;
   shakeTime = Math.max(shakeTime, 0.08);
   popups.push({ x: o.x + o.w / 2, y: o.y - 10, t: 0, text: String(dmg) });
@@ -1842,6 +1847,7 @@ function actionTick(dt) {
   if (player.actT >= spec.total) {
     player.act = null;
     if (spec.basic) {
+      if (spec === COMBO[COMBO.length - 1]) player.recover = COMBO_RECOVERY;   // the finisher leaves him open
       player.combo = (player.combo + 1) % COMBO.length;
       player.comboTimer = 0.5;
       if (player.buffered) queued.attack = 0.2;   // chain straight into the next swing
@@ -1855,6 +1861,7 @@ function update(dt) {
   player.hurt = Math.max(0, player.hurt - dt);
   player.inv = Math.max(0, player.inv - dt);
   player.stun = Math.max(0, player.stun - dt);
+  player.recover = Math.max(0, player.recover - dt);
   player.dashCooldown = Math.max(0, player.dashCooldown - dt);
   player.cd = player.cd.map((c) => Math.max(0, c - dt));
   if (!player.act) {
@@ -1873,7 +1880,7 @@ function update(dt) {
         break;
       }
     }
-    if (!player.act && queued.attack > 0) { queued.attack = 0; startAction(COMBO[player.combo]); }
+    if (!player.act && player.recover <= 0 && queued.attack > 0) { queued.attack = 0; startAction(COMBO[player.combo]); }
   }
 
   // Walking, or the dash
