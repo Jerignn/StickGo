@@ -111,7 +111,8 @@
   .btn.cooling .cd { display: block; }
   .btn.cooling .cdn { display: flex; }
   .btn.cooling { border-color: rgba(255, 255, 255, 0.45); }
-  .btn.cooling > .glyph { opacity: 0.3; }
+  .btn .glyph { width: 64%; height: 64%; image-rendering: pixelated; pointer-events: none; }
+  .btn.cooling > .glyph { opacity: 0.35; }
   @keyframes ready-pop { 0% { transform: scale(1.18); box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.7); } 100% { transform: scale(1); } }
   .btn.ready { animation: ready-pop 0.35s ease-out; }
   /* A small caption under a button says what it does; it fades out a few seconds into the run */
@@ -400,10 +401,10 @@
 <div class="btn" id="jumpBtn" data-cap="JUMP">&#9650;</div>
 <div class="btn" id="attackBtn" data-cap="COMBO"><svg viewBox="0 0 16 16" shape-rendering="crispEdges"><path d="M13 1h2v2h-1v1h-1v1h-1v1h-1v1h-1v1H9v1H8v1H7v1H6v1H5v1H4V9h1V8h1V7h1V6h1V5h1V4h1V3h1V2h1z"/><path d="M3 10h3v1H5v1H4v3H3v-1H2v-1h1z"/><path d="M2 13h1v1H2z"/></svg></div>
 <div id="skillRow">
-  <div class="btn small" id="dashBtn" data-cap="DASH"><span class="glyph">&raquo;</span><i class="cd"></i><b class="cdn"></b></div>
-  <div class="btn small" id="sk1Btn" data-cap="SLAM"><span class="glyph">1</span><i class="cd"></i><b class="cdn"></b></div>
-  <div class="btn small" id="sk2Btn" data-cap="SPIN"><span class="glyph">2</span><i class="cd"></i><b class="cdn"></b></div>
-  <div class="btn small" id="sk3Btn" data-cap="ULTIMATE"><span class="glyph">3</span><i class="cd"></i><b class="cdn"></b></div>
+  <div class="btn small" id="dashBtn" data-cap="DASH"><img class="glyph" src="pictures/icons/dash.png" alt=""><i class="cd"></i><b class="cdn"></b></div>
+  <div class="btn small" id="sk1Btn" data-cap="SLAM"><img class="glyph" src="pictures/icons/slam.png" alt=""><i class="cd"></i><b class="cdn"></b></div>
+  <div class="btn small" id="sk2Btn" data-cap="SPIN"><img class="glyph" src="pictures/icons/spin.png" alt=""><i class="cd"></i><b class="cdn"></b></div>
+  <div class="btn small" id="sk3Btn" data-cap="ULTIMATE"><img class="glyph" src="pictures/icons/ultimate.png" alt=""><i class="cd"></i><b class="cdn"></b></div>
 </div>
 <div id="keyHint">A / D  WALK &nbsp;&middot;&nbsp; W  JUMP &nbsp;&middot;&nbsp; SPACE  ATTACK x3 &nbsp;&middot;&nbsp; SHIFT  DASH &nbsp;&middot;&nbsp; 1 2 3  SKILLS</div>
 <div id="pauseBtn" aria-label="Pause"><span></span><span></span></div>
@@ -3502,7 +3503,7 @@ function draw() {
   }
 
   // Top left, next to the pause button: HEALTH, then MANA, then KILLS
-  const bar = (y, frac, color) => {
+  const bar = (y, frac, color, label) => {
     ctx.fillStyle = colors.inkBack;
     ctx.fillRect(84, y, 190, 14);
     ctx.fillStyle = color;
@@ -3510,9 +3511,17 @@ function draw() {
     ctx.strokeStyle = colors.ink;
     ctx.lineWidth = 2;
     ctx.strokeRect(84, y, 190, 14);
+    // The percentage, in white with a dark edge so it reads on any bar colour
+    ctx.font = "bold 11px 'Courier New', monospace";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#14161c";
+    ctx.strokeText(label, 84 + 95, y + 11);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(label, 84 + 95, y + 11);
   };
-  bar(22, player.hp / PLAYER_MAX_HP, player.hp > 30 ? "#3fbf5a" : "#e02020");
-  bar(42, player.mana / MANA_MAX, "#3d8bff");
+  bar(22, player.hp / PLAYER_MAX_HP, player.hp > 30 ? "#3fbf5a" : "#e02020", `HEALTH ${Math.round(100 * player.hp / PLAYER_MAX_HP)}%`);
+  bar(42, player.mana / MANA_MAX, "#3d8bff", `MANA ${Math.round(100 * player.mana / MANA_MAX)}%`);
   // Ticks show what each skill costs, so he can see how much he can spend
   ctx.fillStyle = colors.ink;
   for (const c of SKILL_MANA) if (c < MANA_MAX) ctx.fillRect(84 + 190 * c / MANA_MAX - 1, 42, 2, 14);

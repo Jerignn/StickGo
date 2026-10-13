@@ -21,7 +21,7 @@ mkdir -p "$OUT/assets" "$OUT/gen" "$OUT/classes"
 cp "$ROOT/index.html" "$ROOT/animations.js" "$ROOT/hold-data.js" "$OUT/assets/"
 mkdir -p "$OUT/assets/pictures"
 find "$ROOT/pictures" -maxdepth 1 -type f -exec cp {} "$OUT/assets/pictures/" \;  # originals/ is not packaged
-for d in weapons hold; do mkdir -p "$OUT/assets/pictures/$d" && cp "$ROOT/pictures/$d/"*.png "$OUT/assets/pictures/$d/"; done
+for d in weapons hold icons; do mkdir -p "$OUT/assets/pictures/$d" && cp "$ROOT/pictures/$d/"*.png "$OUT/assets/pictures/$d/"; done
 
 echo "==> Compiling resources"
 "$BT/aapt2.exe" compile --dir "$SRC/res" -o "$OUT/res.zip"
