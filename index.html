@@ -1836,12 +1836,14 @@ function rockBounds(o, r) {
 // Day/night cycle: every 1000 points it fades to night around 700 and back by 1000
 const DAY = {
   sky: [247, 247, 247], ink: [83, 83, 83], inkBack: [163, 163, 163], cloud: [224, 224, 224],
+  cityFar: [233, 234, 238], cityNear: [219, 221, 227], windowLit: [219, 221, 227],
   enemy: [45, 28, 28], enemyBack: [150, 112, 112], blade: [120, 136, 152],
   ninja: [28, 36, 64], ninjaBack: [112, 122, 150], ghost: [120, 150, 205], ghostBack: [170, 190, 225],
   hero: [26, 26, 34], heroBack: [118, 120, 134]
 };
 const NIGHT = {
   sky: [32, 35, 42], ink: [214, 214, 214], inkBack: [118, 118, 118], cloud: [58, 62, 72],
+  cityFar: [38, 42, 52], cityNear: [46, 51, 63], windowLit: [96, 88, 60],
   enemy: [232, 190, 190], enemyBack: [128, 96, 96], blade: [196, 212, 228],
   ninja: [160, 180, 235], ninjaBack: [100, 115, 155], ghost: [190, 220, 255], ghostBack: [120, 150, 190],
   hero: [236, 236, 244], heroBack: [138, 140, 154]
@@ -2805,6 +2807,51 @@ function drawObstacle(o) {
   }
 }
 
+// Distant skyline: two layers of building silhouettes scrolling slower than the ground.
+// Each layer is a repeating strip of buildings; windows light up as night falls.
+const CITY_TILE = 1100;
+function makeCityLayer(minW, maxW, minH, maxH) {
+  const buildings = [];
+  for (let x = 0; x < CITY_TILE;) {
+    const w = Math.min(minW + Math.random() * (maxW - minW), CITY_TILE - x);
+    buildings.push({ x, w, h: minH + Math.random() * (maxH - minH), seed: Math.random() });
+    x += w + 2;
+  }
+  return buildings;
+}
+const CITY_FAR = { speed: 0.04, items: makeCityLayer(30, 60, 50, 110), fill: "cityFar", windows: false };
+const CITY_NEAR = { speed: 0.1, items: makeCityLayer(40, 80, 40, 95), fill: "cityNear", windows: true };
+
+function drawCityLayer(layer) {
+  const shift = ((distance || 0) * layer.speed) % CITY_TILE;
+  ctx.fillStyle = colors[layer.fill];
+  for (let tile = -1; tile <= Math.ceil(W / CITY_TILE); tile++) {
+    const ox = tile * CITY_TILE - shift;
+    for (const b of layer.items) {
+      const x = ox + b.x;
+      if (x > W || x + b.w < 0) continue;
+      ctx.fillRect(x, GROUND_Y - b.h, b.w, b.h);
+    }
+  }
+  if (!layer.windows || night <= 0) return;
+  ctx.globalAlpha = night;
+  ctx.fillStyle = colors.windowLit;
+  for (let tile = -1; tile <= Math.ceil(W / CITY_TILE); tile++) {
+    const ox = tile * CITY_TILE - shift;
+    for (const b of layer.items) {
+      const x = ox + b.x;
+      if (x > W || x + b.w < 0) continue;
+      let n = 0;
+      for (let wy = GROUND_Y - b.h + 8; wy < GROUND_Y - 10; wy += 14) {
+        for (let wx = x + 6; wx < x + b.w - 8; wx += 12, n++) {
+          if (((b.seed * 997 + n * 7919) % 5) < 2) ctx.fillRect(wx, wy, 4, 6);
+        }
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawCloud(c) {
   ctx.fillStyle = colors.cloud;
   ctx.beginPath();
@@ -2838,6 +2885,8 @@ function draw() {
     ctx.translate((Math.random() - 0.5) * m, (Math.random() - 0.5) * m);
   }
 
+  drawCityLayer(CITY_FAR);
+  drawCityLayer(CITY_NEAR);
   clouds.forEach(drawCloud);
 
   // Ground
