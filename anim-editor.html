@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StickGo Animation Editor</title>
+<script src="animations.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #14161c; color: #d6d6d6; font: 13px "Courier New", monospace;
+    display: grid; grid-template-columns: 230px 1fr 310px; grid-template-rows: auto 1fr; height: 100vh;
+  }
+  header { grid-column: 1 / 4; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; background: #1d2029; border-bottom: 2px solid #2d313d; }
+  header h1 { font-size: 15px; margin: 0 10px 0 0; letter-spacing: 2px; color: #ffd34d; }
+  button, select, input[type=number], input[type=text] {
+    background: #2a2d36; color: #d6d6d6; border: 2px solid #4a4f5e; border-radius: 6px; font: inherit; padding: 4px 8px; cursor: pointer;
+  }
+  input[type=number], input[type=text] { cursor: text; }
+  input[type=number] { width: 70px; }
+  button:hover { border-color: #d6d6d6; }
+  button.active { border-color: #ffd34d; color: #ffd34d; }
+  .panel { padding: 10px; overflow-y: auto; background: #181b22; }
+  .panel h2 { font-size: 12px; letter-spacing: 2px; color: #8892a0; margin: 14px 0 6px; }
+  .panel h2:first-child { margin-top: 0; }
+  #list h3 { font-size: 11px; letter-spacing: 2px; color: #ffd34d; margin: 12px 0 4px; }
+  #list button { display: block; width: 100%; text-align: left; margin-bottom: 3px; padding: 3px 8px; }
+  #list .sub { margin-left: 12px; width: calc(100% - 12px); }
+  main { overflow-y: auto; padding: 10px; background: #0f1116; }
+  #preview { width: 100%; max-width: 760px; aspect-ratio: 2 / 1; image-rendering: pixelated; background: #8da0b8; border: 2px solid #3a3f4e; display: block; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+  label { display: flex; gap: 5px; align-items: center; }
+  .thumbs { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+  .thumb { position: relative; width: 84px; height: 54px; border: 2px solid #3a3f4e; background: repeating-conic-gradient(#3a3f4e 0 25%, #2c303b 0 50%) 50% / 12px 12px; cursor: pointer; }
+  .thumb canvas { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+  .thumb.sel { border-color: #ffd34d; }
+  .thumb.now { box-shadow: 0 0 0 2px #4aa8ff; }
+  .thumb .n { position: absolute; left: 2px; top: 1px; font-size: 10px; color: #fff; text-shadow: 0 0 3px #000, 0 0 3px #000; }
+  .thumb .tag { position: absolute; right: 2px; top: 1px; font-size: 11px; text-shadow: 0 0 3px #000; }
+  .picker .thumb { width: 64px; height: 42px; }
+  .hit { border: 2px solid #3a3f4e; border-radius: 6px; padding: 6px; margin-bottom: 6px; }
+  .hit.now { border-color: #ff7a2a; }
+  .hit label { margin: 2px 0; justify-content: space-between; }
+  .hit input[type=number] { width: 66px; }
+  .note { color: #8892a0; font-size: 12px; line-height: 1.5; }
+  #status { color: #8892a0; }
+  #dirty { color: #ff7a2a; }
+  kbd { background: #2a2d36; border: 1px solid #4a4f5e; border-radius: 3px; padding: 0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>STICKGO ANIMATION EDITOR</h1>
+  <button id="saveBtn">SAVE animations.js</button>
+  <button id="dlBtn">DOWNLOAD</button>
+  <button id="undoBtn">UNDO</button>
+  <button id="redoBtn">REDO</button>
+  <a href="editor.html" style="color:#4aa8ff">sprite editor &rarr;</a>
+  <span id="dirty"></span><span id="status"></span>
+</header>
+
+<aside class="panel" id="list"></aside>
+
+<main>
+  <canvas id="preview" width="640" height="320"></canvas>
+  <div class="row">
+    <button id="play">PAUSE</button>
+    <button id="stepBack">&lt;</button><button id="stepFwd">&gt;</button>
+    <label>SPEED <input type="number" id="fps" min="1" max="120" step="1"> fps</label>
+    <span id="duration" class="note"></span>
+  </div>
+  <h2 style="font-size:12px;letter-spacing:2px;color:#8892a0">TIMELINE <span class="note">(click a frame to select it)</span></h2>
+  <div id="timeline" class="thumbs"></div>
+  <div class="row">
+    <button id="rm">REMOVE</button>
+    <button id="left">&larr; MOVE</button>
+    <button id="right">MOVE &rarr;</button>
+    <button id="dup">DUPLICATE</button>
+    <button id="clearAll">CLEAR ALL</button>
+  </div>
+  <h2 style="font-size:12px;letter-spacing:2px;color:#8892a0">SHEET FRAMES <span class="note">(click one to add it after the selected frame)</span></h2>
+  <div id="picker" class="thumbs picker"></div>
+</main>
+
+<aside class="panel" id="props"></aside>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const DATA = JSON.parse(JSON.stringify(window.STICKGO_ANIMS));
+const HERO_SHEETS = ["idle", "run", "jump", "jump_peak", "fall", "dash", "attack1", "attack2", "attack3", "skill1", "skill2", "skill3", "start_skill3", "hit1", "hit3"];
+const FW = 128, FH = 64, SC = 1.5;   // frame size, and how big the hero is drawn in the game
+const HEADER = `// StickGo animation data: which sprite frames play, how fast, and when attacks hit.
+// Edit it with anim-editor.html (it saves this file) or by hand. index.html reads it at start-up.
+//  hero.states  - what he does when he isn't attacking (frames = sheet frame numbers, fps = speed)
+//  hero.actions - attacks and skills: parts play one after another; hits land when the part reaches
+//                 frame number \`at\` (a position in that part's frame list); front/back = reach in
+//                 game units, kb = shove, cd = cooldown (s), lunge = step forward, flash = frames
+//                 that fill the screen (skipped in Comfort Mode)
+//  foes         - stats and animations for every enemy kind; row/frames pick cells in pictures/foe_<kind>.png
+`;
+const FOE_ANIM_HELP = {
+  idle: "Breathing while it waits. Plays at SPEED.",
+  walk: "Follows its stride (one full loop per step cycle), so speed doesn't apply.",
+  windup: "The wind-up: these frames are spread over the enemy's WINDUP time (stats). It also shows while a ninja warns, an archer aims and a bomber lifts the bomb.",
+  strike: "The swing itself: spread over 0.25 s.",
+  release: "Archers and bombers, right after letting go. Plays at SPEED.",
+  charge: "The pose held while a ninja or the boss charges.",
+  hit: "Flinch when it's hit (first frame, then second).",
+  death: "Falls when killed. Plays at SPEED, then lies there and fades."
+};
+
+// ---- images -------------------------------------------------------------------------------
+const imgs = {};
+function img(file) {
+  if (!imgs[file]) {
+    const i = new Image();
+    i.onload = () => renderAll();
+    i.src = `pictures/${file}.png`;
+    imgs[file] = i;
+  }
+  return imgs[file];
+}
+
+// ---- selection and the clip being edited ----------------------------------------------------------
+let sel = { type: "action", id: "attack1" };
+let partIdx = 0;          // which part of an action
+let cur = 0;              // selected frame in the timeline
+let history = [], future = [];
+let dirty = false, fileHandle = null;
+
+// A "clip" = a frame list plus the sheet image it draws from
+function clip() {
+  if (sel.type === "action") {
+    const a = DATA.hero.actions[sel.id], p = a.parts[Math.min(partIdx, a.parts.length - 1)];
+    return { obj: p, image: img("hero_" + p.sheet), row: 0, cols: 25, part: p, action: a };
+  }
+  if (sel.type === "state") { const s = DATA.hero.states[sel.id]; return { obj: s, image: img("hero_" + s.sheet), row: 0, cols: 25 }; }
+  if (sel.type === "foe-anim") { const a = DATA.foes[sel.kind].anims[sel.id]; return { obj: a, image: img("foe_" + sel.kind), row: a.row, cols: 8 }; }
+  return null;
+}
+function previewFps(c) {
+  if (c.obj.fps) return c.obj.fps;
+  if (sel.type === "foe-anim") {
+    const n = c.obj.frames.length, st = DATA.foes[sel.kind].stats;
+    if (sel.id === "windup") return n / st.windup;
+    if (sel.id === "strike") return n / 0.25;
+    if (sel.id === "walk") return 10;
+    return 8;
+  }
+  return 10;
+}
+
+// ---- data editing -------------------------------------------------------------------------
+function touch() {
+  history.push(snapshot);
+  if (history.length > 80) history.shift();
+  future = [];
+  snapshot = JSON.stringify(DATA);
+  dirty = true;
+  $("dirty").textContent = "* unsaved changes ";
+}
+let snapshot = JSON.stringify(DATA);
+function loadSnapshot(s) { const d = JSON.parse(s); for (const k of Object.keys(DATA)) delete DATA[k]; Object.assign(DATA, d); }
+$("undoBtn").onclick = () => { if (!history.length) return; future.push(snapshot); snapshot = history.pop(); loadSnapshot(snapshot); fixSel(); renderAll(); };
+$("redoBtn").onclick = () => { if (!future.length) return; history.push(snapshot); snapshot = future.pop(); loadSnapshot(snapshot); fixSel(); renderAll(); };
+function fixSel() { const c = clip(); if (!c) return; cur = Math.min(cur, Math.max(0, c.obj.frames.length - 1)); }
+
+function getPath(path) { return path.split(".").reduce((o, k) => o[k], DATA); }
+function setPath(path, v) {
+  const keys = path.split("."), last = keys.pop();
+  keys.reduce((o, k) => o[k], DATA)[last] = v;
+}
+
+// ---- save --------------------------------------------------------------------------------------
+function fileText() {
+  const body = JSON.stringify({ hero: DATA.hero, foes: DATA.foes }, null, 2)
+    .replace(/\[\s+([^\[\]{}]*?)\s+\]/g, (m, inner) => "[" + inner.replace(/\s*\n\s*/g, " ") + "]");
+  return HEADER + "window.STICKGO_ANIMS = " + body + ";\n";
+}
+$("saveBtn").onclick = async () => {
+  if (!window.showSaveFilePicker) { download(); return; }
+  try {
+    if (!fileHandle) fileHandle = await showSaveFilePicker({ suggestedName: "animations.js", types: [{ description: "JavaScript", accept: { "text/javascript": [".js"] } }] });
+    const w = await fileHandle.createWritable();
+    await w.write(fileText());
+    await w.close();
+    dirty = false; $("dirty").textContent = "";
+    status("saved " + fileHandle.name + " - reload the game to see it");
+  } catch (e) { if (e.name !== "AbortError") { fileHandle = null; status("couldn't write the file - downloading instead"); download(); } }
+};
+$("dlBtn").onclick = download;
+function download() {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([fileText()], { type: "text/javascript" }));
+  a.download = "animations.js";
+  a.click();
+  status("downloaded animations.js - replace the one in the project folder");
+}
+function status(t) { $("status").textContent = t; }
+window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+// ---- left list -------------------------------------------------------------------------------------
+function renderList() {
+  let h = `<h3>HERO ATTACKS &amp; SKILLS</h3>`;
+  for (const id of Object.keys(DATA.hero.actions)) {
+    const on = sel.type === "action" && sel.id === id;
+    h += `<button class="${on ? "active" : ""}" data-sel="action:${id}">${DATA.hero.actions[id].label}</button>`;
+  }
+  h += `<h3>HERO MOVES</h3>`;
+  for (const id of Object.keys(DATA.hero.states)) {
+    const on = sel.type === "state" && sel.id === id;
+    h += `<button class="${on ? "active" : ""}" data-sel="state:${id}">${id.toUpperCase().replace("_", " ")}</button>`;
+  }
+  for (const kind of Object.keys(DATA.foes)) {
+    h += `<h3>ENEMY: ${kind.toUpperCase()}</h3>`;
+    h += `<button class="${sel.type === "foe-stats" && sel.kind === kind ? "active" : ""}" data-sel="foe-stats::${kind}">STATS</button>`;
+    for (const id of Object.keys(DATA.foes[kind].anims)) {
+      const on = sel.type === "foe-anim" && sel.kind === kind && sel.id === id;
+      h += `<button class="sub ${on ? "active" : ""}" data-sel="foe-anim:${id}:${kind}">${id}</button>`;
+    }
+  }
+  $("list").innerHTML = h;
+}
+$("list").onclick = (e) => {
+  const b = e.target.closest("[data-sel]");
+  if (!b) return;
+  const [type, id, kind] = b.dataset.sel.split(":");
+  sel = { type, id, kind };
+  partIdx = 0; cur = 0; animT = 0;
+  renderAll();
+};
+
+// ---- preview + timeline -------------------------------------------------------------------------------
+let playing = true, animT = 0, last = performance.now();
+const pc = $("preview"), pctx = pc.getContext("2d");
+$("play").onclick = () => { playing = !playing; $("play").textContent = playing ? "PAUSE" : "PLAY"; };
+$("stepBack").onclick = () => { playing = false; $("play").textContent = "PLAY"; stepTo(cur - 1); };
+$("stepFwd").onclick = () => { playing = false; $("play").textContent = "PLAY"; stepTo(cur + 1); };
+function stepTo(i) {
+  const c = clip(); if (!c || !c.obj.frames.length) return;
+  cur = (i + c.obj.frames.length) % c.obj.frames.length;
+  animT = cur; renderTimeline(); renderProps();
+}
+
+function drawCell(canvas, image, row, col) {
+  const g = canvas.getContext("2d");
+  g.imageSmoothingEnabled = false;
+  g.clearRect(0, 0, canvas.width, canvas.height);
+  if (image.complete && image.naturalWidth) g.drawImage(image, col * FW, row * FH, FW, FH, 0, 0, canvas.width, canvas.height);
+}
+
+function nowIndex(c) {
+  const n = c.obj.frames.length;
+  return n ? (playing ? Math.floor(animT) % n : cur) : 0;
+}
+
+function hitsOf(c) { return c.action ? c.action.hits.filter((h) => (h.part || 0) === partIdx) : []; }
+
+function drawPreview(now) {
+  const dt = (now - last) / 1000; last = now;
+  const c = clip();
+  pctx.clearRect(0, 0, pc.width, pc.height);
+  if (c && c.obj.frames.length) {
+    if (playing) animT += dt * previewFps(c);
+    const i = nowIndex(c);
+    const s = pc.width / FW;   // 5x
+    // ground line, and the centre where the game puts his position
+    pctx.fillStyle = "rgba(40,200,80,0.8)"; pctx.fillRect(0, 63 * s + s, pc.width, 2);
+    pctx.fillStyle = "rgba(40,120,220,0.35)"; pctx.fillRect(pc.width / 2, 0, 1, pc.height);
+    // where this attack reaches: front/back are game units, the sprites are drawn at SC
+    for (const h of hitsOf(c)) {
+      const isNow = h.at === i;
+      const front = Math.min(h.front, 190) / SC * s, back = Math.min(h.back, 190) / SC * s;
+      pctx.fillStyle = isNow ? "rgba(255,122,42,0.45)" : "rgba(255,122,42,0.12)";
+      pctx.fillRect(pc.width / 2 - back, 63 * s - 50 * s, front + back, 50 * s);
+      if (isNow) { pctx.strokeStyle = "#ff7a2a"; pctx.strokeRect(pc.width / 2 - back, 63 * s - 50 * s, front + back, 50 * s); }
+    }
+    pctx.imageSmoothingEnabled = false;
+    const col = c.obj.frames[i];
+    if (c.image.complete && c.image.naturalWidth) pctx.drawImage(c.image, col * FW, c.row * FH, FW, FH, 0, 0, pc.width, pc.height);
+    $("duration").textContent = `${c.obj.frames.length} frames, ${(c.obj.frames.length / previewFps(c)).toFixed(2)} s` +
+      (c.action ? ` (this part)` : "") + `  - showing ${i}`;
+    document.querySelectorAll("#timeline .thumb").forEach((t, k) => t.classList.toggle("now", k === i));
+  } else $("duration").textContent = c ? "no frames - add some from the sheet below" : "";
+  requestAnimationFrame(drawPreview);
+}
+
+function renderTimeline() {
+  const c = clip(), box = $("timeline");
+  box.innerHTML = "";
+  if (!c) return;
+  const hits = hitsOf(c);
+  c.obj.frames.forEach((col, i) => {
+    const t = document.createElement("div");
+    t.className = "thumb" + (i === cur ? " sel" : "");
+    const cv = document.createElement("canvas");
+    cv.width = FW; cv.height = FH;
+    drawCell(cv, c.image, c.row, col);
+    t.appendChild(cv);
+    const n = document.createElement("span"); n.className = "n"; n.textContent = `${i}  (#${col})`; t.appendChild(n);
+    const tag = document.createElement("span"); tag.className = "tag";
+    tag.textContent = (hits.some((h) => h.at === i) ? "★" : "") + (c.part && c.part.flash && c.part.flash.includes(col) ? "⚡" : "");
+    t.appendChild(tag);
+    t.onclick = () => { cur = i; playing = false; $("play").textContent = "PLAY"; animT = i; renderTimeline(); renderProps(); };
+    box.appendChild(t);
+  });
+  $("fps").value = c.obj.fps || "";
+  $("fps").disabled = !c.obj.fps && sel.type === "foe-anim";
+  // the picker of every frame in the sheet
+  const pk = $("picker");
+  pk.innerHTML = "";
+  const count = Math.max(1, Math.floor((c.image.naturalWidth || FW * c.cols) / FW));
+  for (let col = 0; col < count; col++) {
+    const t = document.createElement("div"); t.className = "thumb";
+    const cv = document.createElement("canvas"); cv.width = FW; cv.height = FH;
+    drawCell(cv, c.image, c.row, col);
+    t.appendChild(cv);
+    const n = document.createElement("span"); n.className = "n"; n.textContent = "#" + col; t.appendChild(n);
+    t.onclick = () => { const at = cur + 1 > c.obj.frames.length ? 0 : cur + 1; shiftHits(c, at, 1); c.obj.frames.splice(at, 0, col); cur = Math.min(cur + 1, c.obj.frames.length - 1); touch(); renderAll(); };
+    pk.appendChild(t);
+  }
+}
+$("fps").oninput = () => {
+  const c = clip(), v = Number($("fps").value);
+  if (!c || !(v > 0)) return;
+  c.obj.fps = v; touch(); renderTimeline();
+};
+$("rm").onclick = () => { const c = clip(); if (!c || !c.obj.frames.length) return; shiftHits(c, cur, -1); c.obj.frames.splice(cur, 1); cur = Math.max(0, Math.min(cur, c.obj.frames.length - 1)); touch(); renderAll(); };
+$("left").onclick = () => swap(-1);
+$("right").onclick = () => swap(1);
+function swap(d) {
+  const c = clip(), f = c && c.obj.frames, j = cur + d;
+  if (!f || j < 0 || j >= f.length) return;
+  // hits stay attached to the frame they were on
+  for (const h of hitsOf(c)) { if (h.at === cur) h.at = j; else if (h.at === j) h.at = cur; }
+  [f[cur], f[j]] = [f[j], f[cur]]; cur = j; touch(); renderAll();
+}
+$("dup").onclick = () => { const c = clip(); if (!c || !c.obj.frames.length) return; shiftHits(c, cur + 1, 1); c.obj.frames.splice(cur + 1, 0, c.obj.frames[cur]); cur++; touch(); renderAll(); };
+$("clearAll").onclick = () => { const c = clip(); if (!c) return; c.obj.frames.length = 0; cur = 0; touch(); renderAll(); };
+function shiftHits(c, from, d) {   // keep hit positions pointing at the same frames when the list changes
+  for (const h of hitsOf(c)) { if (h.at > from || (d > 0 && h.at >= from)) h.at += d; else if (d < 0 && h.at === from) h.at = Math.max(0, from - 1); }
+}
+
+// ---- right panel: properties ---------------------------------------------------------------------------
+const num = (label, path, extra = "") => `<label>${label}<input type="number" data-path="${path}" value="${getPath(path) ?? 0}" ${extra}></label>`;
+function renderProps() {
+  const p = $("props");
+  let h = "";
+  if (sel.type === "action") {
+    const a = DATA.hero.actions[sel.id], base = `hero.actions.${sel.id}`;
+    h += `<h2>${a.label}</h2>`;
+    h += `<div class="row"><label>NAME<input type="text" data-path="${base}.label" value="${a.label}" style="width:170px"></label></div>`;
+    if (a.skill) h += `<div class="row">${num("COOLDOWN (s)", base + ".cd", 'step="0.5" min="0"')}</div>`;
+    h += `<div class="row">${num("STEP FORWARD", base + ".lunge", 'min="0" step="5"')}</div>`;
+    h += `<div class="row"><label><input type="checkbox" data-path="${base}.invuln" ${a.invuln ? "checked" : ""}> CAN'T BE HURT WHILE IT PLAYS</label></div>`;
+    h += `<h2>PARTS <span class="note">(played one after another)</span></h2><div class="row">`;
+    a.parts.forEach((pt, i) => { h += `<button class="${i === partIdx ? "active" : ""}" data-part="${i}">${i + 1}: ${pt.sheet}</button>`; });
+    h += `<button data-addpart>+</button>${a.parts.length > 1 ? "<button data-rmpart>&minus;</button>" : ""}</div>`;
+    const pt = a.parts[Math.min(partIdx, a.parts.length - 1)];
+    h += `<div class="row"><label>SHEET<select data-path="${base}.parts.${partIdx}.sheet">${HERO_SHEETS.map((s) => `<option ${s === pt.sheet ? "selected" : ""}>${s}</option>`).join("")}</select></label></div>`;
+    const col = pt.frames[cur];
+    const flashOn = pt.flash && pt.flash.includes(col);
+    h += `<div class="row"><button data-flash>${flashOn ? "⚡ FLASH FRAME: ON" : "⚡ MAKE FRAME #" + (col ?? "-") + " A FULL-SCREEN FLASH"}</button></div>`;
+    h += `<h2>HITS <span class="note">(★ on the timeline)</span></h2>`;
+    a.hits.forEach((hit, i) => {
+      if ((hit.part || 0) !== partIdx) return;
+      const hb = `${base}.hits.${i}`;
+      h += `<div class="hit ${hit.at === nowIndex(clip()) ? "now" : ""}">
+        <label>LANDS ON FRAME<input type="number" data-path="${hb}.at" value="${hit.at}" min="0"></label>
+        <div class="row"><button data-hitsel="${i}">= SELECTED (${cur})</button><button data-hitdel="${i}">DELETE</button></div>
+        <label>DAMAGE<input type="number" data-path="${hb}.dmg" value="${hit.dmg}"></label>
+        <label>REACH FRONT<input type="number" data-path="${hb}.front" value="${hit.front}" step="5"></label>
+        <label>REACH BEHIND<input type="number" data-path="${hb}.back" value="${hit.back}" step="5"></label>
+        <label>SHOVE<input type="number" data-path="${hb}.kb" value="${hit.kb}" step="5"></label>
+        <label><span>HITS EVERYONE ON SCREEN</span><input type="checkbox" data-path="${hb}.screen" ${hit.screen ? "checked" : ""}></label>
+      </div>`;
+    });
+    h += `<button data-addhit>+ ADD A HIT ON FRAME ${cur}</button>`;
+    h += `<p class="note">The orange box in the preview is the reach of the hit. Damage is out of the enemy's HP (stats): a grunt has 30.</p>`;
+  } else if (sel.type === "state") {
+    const s = DATA.hero.states[sel.id], base = `hero.states.${sel.id}`;
+    h += `<h2>${sel.id.toUpperCase().replace("_", " ")}</h2>`;
+    h += `<div class="row"><label>SHEET<select data-path="${base}.sheet">${HERO_SHEETS.map((x) => `<option ${x === s.sheet ? "selected" : ""}>${x}</option>`).join("")}</select></label></div>`;
+    const notes = {
+      idle: "Standing still. Plays at SPEED.", run: "Walking. Plays at SPEED while he moves.",
+      jump: "Going up: faster means earlier frames. Speed doesn't apply.", jump_peak: "At the top of the jump. Plays at SPEED.",
+      fall: "Coming down. Plays at SPEED.", dash: "Spread across the dash (0.16 s).", hurt: "Spread across the flinch after a hit (0.3 s).",
+      dying: "Plays at SPEED while he falls on the game-over screen."
+    };
+    h += `<p class="note">${notes[sel.id] || ""}</p>`;
+  } else if (sel.type === "foe-stats") {
+    const base = `foes.${sel.kind}.stats`, s = DATA.foes[sel.kind].stats;
+    h += `<h2>${sel.kind.toUpperCase()} STATS</h2>`;
+    h += [["HEALTH", "hp"], ["WALK SPEED", "speed"], ["DAMAGE TO HERO", "dmg"], ["STOPS AT DISTANCE", "stand"],
+      ["WIND-UP TIME (s)", "windup"], ["RECOVER TIME (s)", "rec"], ["SCORE", "pts"]].map(([l, k]) => `<div class="row">${num(l, `${base}.${k}`, 'step="any"')}</div>`).join("");
+    h += `<div class="row"><label>GOLD<input type="number" data-path="${base}.gold.0" value="${s.gold[0]}"> to <input type="number" data-path="${base}.gold.1" value="${s.gold[1]}"></label></div>`;
+    h += `<p class="note">STOPS AT DISTANCE = how close it walks before it attacks (archers and bombers stay far, brutes slam from a distance).</p>`;
+  } else if (sel.type === "foe-anim") {
+    const a = DATA.foes[sel.kind].anims[sel.id], base = `foes.${sel.kind}.anims.${sel.id}`;
+    h += `<h2>${sel.kind.toUpperCase()} - ${sel.id.toUpperCase()}</h2>`;
+    h += `<div class="row">${num("SHEET ROW", base + ".row", 'min="0" max="4"')}</div>`;
+    h += `<p class="note">${FOE_ANIM_HELP[sel.id] || ""}<br><br>Sheet rows: 0 idle, 1 walk, 2 attack, 3 hit, 4 death.</p>`;
+  }
+  p.innerHTML = h;
+}
+$("props").addEventListener("input", (e) => {
+  const el = e.target, path = el.dataset.path;
+  if (!path) return;
+  let v = el.type === "checkbox" ? el.checked : el.type === "number" ? Number(el.value) : el.value;
+  if (el.type === "number" && el.value === "") return;
+  setPath(path, v);
+  touch();
+  if (path.endsWith(".sheet") || path.endsWith(".row")) { renderAll(); return; }
+  if (path.endsWith(".label")) { renderList(); return; }
+  renderTimeline();
+});
+$("props").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  const a = sel.type === "action" ? DATA.hero.actions[sel.id] : null;
+  if (b.dataset.part !== undefined) { partIdx = Number(b.dataset.part); cur = 0; animT = 0; renderAll(); }
+  else if ("addpart" in b.dataset) { a.parts.push({ sheet: "attack1", frames: [0], fps: 12 }); partIdx = a.parts.length - 1; cur = 0; touch(); renderAll(); }
+  else if ("rmpart" in b.dataset) {
+    a.hits = a.hits.filter((h) => (h.part || 0) !== partIdx);
+    a.hits.forEach((h) => { if ((h.part || 0) > partIdx) h.part--; });
+    a.parts.splice(partIdx, 1); partIdx = Math.max(0, partIdx - 1); cur = 0; touch(); renderAll();
+  }
+  else if ("flash" in b.dataset) {
+    const pt = a.parts[partIdx], col = pt.frames[cur];
+    if (col === undefined) return;
+    pt.flash = pt.flash || [];
+    const k = pt.flash.indexOf(col);
+    if (k >= 0) pt.flash.splice(k, 1); else pt.flash.push(col);
+    if (!pt.flash.length) delete pt.flash;
+    touch(); renderAll();
+  }
+  else if (b.dataset.hitsel !== undefined) { a.hits[Number(b.dataset.hitsel)].at = cur; touch(); renderAll(); }
+  else if (b.dataset.hitdel !== undefined) { a.hits.splice(Number(b.dataset.hitdel), 1); touch(); renderAll(); }
+  else if ("addhit" in b.dataset) { a.hits.push({ ...(partIdx ? { part: partIdx } : {}), at: cur, dmg: 15, front: 80, back: 8, kb: 30 }); touch(); renderAll(); }
+});
+
+function renderAll() { renderList(); renderTimeline(); renderProps(); }
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); (e.shiftKey ? $("redoBtn") : $("undoBtn")).click(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); $("redoBtn").click(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); $("saveBtn").click(); }
+  else if (e.key === " ") { e.preventDefault(); $("play").click(); }
+  else if (e.key === "ArrowRight") { e.preventDefault(); $("stepFwd").click(); }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); $("stepBack").click(); }
+});
+
+renderAll();
+requestAnimationFrame(drawPreview);
+status("pick something on the left. Save writes animations.js - reload the game to see changes.");
+</script>
+</body>
+</html>

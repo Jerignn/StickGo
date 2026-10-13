@@ -18,7 +18,7 @@ KEYSTORE="$SRC/debug.keystore"
 
 rm -rf "$OUT"
 mkdir -p "$OUT/assets" "$OUT/gen" "$OUT/classes"
-cp "$ROOT/index.html" "$OUT/assets/"
+cp "$ROOT/index.html" "$ROOT/animations.js" "$OUT/assets/"
 mkdir -p "$OUT/assets/pictures"
 find "$ROOT/pictures" -maxdepth 1 -type f -exec cp {} "$OUT/assets/pictures/" \;  # originals/ is not packaged
 

@@ -429,6 +429,7 @@
   <button data-action="main">MAIN MENU</button>
 </div>
 
+<script src="animations.js"></script>
 <script>
 const canvas = document.getElementById("game");
 let ctx = canvas.getContext("2d");   // swapped briefly to draw the hero into the customize preview
@@ -1568,39 +1569,38 @@ for (const name of Object.keys(SHEET_FRAMES)) {
 }
 const FRAME_W = 128, FRAME_H = 64, SC = 1.5;   // drawn 1.5x so he stands about 60 units tall
 
+// The animation data (animations.js, edited with anim-editor.html)
+const ANIM = window.STICKGO_ANIMS;
+const HS = ANIM.hero.states;
+
 // An action is a list of sheets played one after the other (parts) and hits that land when
 // the animation reaches a frame. front/back = how far the hit reaches ahead of and behind him,
 // kb = how far it shoves what it hits. prep() works out the timings.
-function prep(spec) {
+function prep(def) {
+  const spec = { ...def, hits: def.hits.map((h) => ({ ...h, part: h.part || 0 })) };
   let t = 0;
-  spec.partStart = spec.parts.map((p) => { const s = t; t += SHEET_FRAMES[p.sheet] / p.fps; return s; });
+  spec.partStart = spec.parts.map((p) => { const s = t; t += p.frames.length / p.fps; return s; });
   spec.total = t;
-  spec.hitT = spec.hits.map((h) => spec.partStart[h.part || 0] + h.frame / spec.parts[h.part || 0].fps);
+  spec.hitT = spec.hits.map((h) => spec.partStart[h.part] + h.at / spec.parts[h.part].fps);
   return spec;
 }
+// The sheet frame showing t seconds into an action
 function actFrame(spec, t) {
   let i = spec.parts.length - 1;
   while (i > 0 && t < spec.partStart[i]) i--;
   const p = spec.parts[i];
-  return { sheet: p.sheet, frame: Math.min(SHEET_FRAMES[p.sheet] - 1, Math.floor((t - spec.partStart[i]) * p.fps)) };
+  const frame = p.frames[Math.min(p.frames.length - 1, Math.floor((t - spec.partStart[i]) * p.fps))];
+  return { sheet: p.sheet, frame, flash: !!(p.flash && p.flash.includes(frame)) };
+}
+// One frame of a hero state (idle, run...), chosen by position in its frame list
+function stateFrame(st, i) {
+  return { sheet: st.sheet, frame: st.frames[Math.max(0, Math.min(st.frames.length - 1, Math.floor(i)))] };
 }
 
 // Basic attack 1 - 2 - 3: press again during a swing to chain into the next one
-const COMBO = [
-  { basic: true, parts: [{ sheet: "attack1", fps: 26 }], hits: [{ frame: 3, dmg: 14, front: 82, back: 8, kb: 34 }], lunge: 70 },
-  { basic: true, parts: [{ sheet: "attack2", fps: 26 }], hits: [{ frame: 1, dmg: 14, front: 82, back: 8, kb: 34 }], lunge: 70 },
-  { basic: true, parts: [{ sheet: "attack3", fps: 24 }], hits: [{ frame: 2, dmg: 26, front: 96, back: 30, kb: 60 }], lunge: 50 }
-].map(prep);
+const COMBO = ANIM.hero.combo.map((id) => prep(ANIM.hero.actions[id]));
 // Skills 1 - 2 - 3, each with its own cooldown (s)
-const SKILLS = [
-  { skill: true, label: "SLAM", cd: 4, parts: [{ sheet: "skill1", fps: 13 }],
-    hits: [{ frame: 4, dmg: 42, front: 165, back: 0, kb: 90 }] },
-  { skill: true, label: "SPIN", cd: 8, invuln: true, parts: [{ sheet: "skill2", fps: 22 }],
-    hits: [2, 4, 6, 8].map((frame) => ({ frame, dmg: 16, front: 130, back: 130, kb: 26 })) },
-  { skill: true, label: "ULTIMATE", cd: 18, invuln: true,
-    parts: [{ sheet: "start_skill3", fps: 8 }, { sheet: "skill3", fps: 15 }],
-    hits: [{ part: 1, frame: 16, dmg: 130, front: 2000, back: 2000, kb: 0, screen: true }] }
-].map(prep);
+const SKILLS = ANIM.hero.skills.map((id) => prep(ANIM.hero.actions[id]));
 
 // --- Arena ---
 // The hero walks left and right across a fixed stage while waves of enemies step out of portals
@@ -1620,6 +1620,7 @@ const FOES = {
   ghost:  { look: "phantom", scale: 0,   w: 26, h: 60,  hp: 26,  speed: 100, dmg: 14, stand: 40,  windup: 0.5,  rec: 0.5, gold: [4, 6],   pts: 25 },
   boss:   { look: "brute",   scale: 2.1, w: 52, h: 126, hp: 320, speed: 60,  dmg: 28, stand: 190, windup: 0.9,  rec: 1.0, gold: [60, 60], pts: 200 }
 };
+for (const [kind, data] of Object.entries(ANIM.foes)) Object.assign(FOES[kind], data.stats);   // stats come from animations.js
 const SHOOTERS = new Set(["archer", "bomber"]);   // never more than two at a time
 let foes = [];                 // enemies on the field
 let portals = [];              // purple gates the enemies step out of
@@ -2812,17 +2813,18 @@ function drawPortal(p) {
 // Which sheet and frame the hero is showing right now
 function heroSprite() {
   const now = performance.now() / 1000;
-  if (state === "dying") return { sheet: "hit3", frame: Math.min(2, Math.floor(dyingT * 6)), rot: Math.min(1.5, dyingT * 3.2) };
-  if (player.stun > 0) return { sheet: "hit1", frame: Math.min(2, Math.floor((0.3 - player.stun) / 0.1)) };
+  const rate = (st) => now * (st.fps || 10);
+  if (state === "dying") { const st = HS.dying; const f = stateFrame(st, dyingT * st.fps); f.rot = Math.min(1.5, dyingT * 3.2); return f; }
+  if (player.stun > 0) return stateFrame(HS.hurt, (0.3 - player.stun) / 0.3 * HS.hurt.frames.length);
   if (player.act) return actFrame(player.act, player.actT);
-  if (player.dash > 0) return { sheet: "dash", frame: 4 + Math.min(4, Math.floor((1 - player.dash / DASH_TIME) * 5)) };
+  if (player.dash > 0) return stateFrame(HS.dash, (1 - player.dash / DASH_TIME) * HS.dash.frames.length);
   if (!player.onGround) {
-    if (player.vy < -200) return { sheet: "jump", frame: Math.max(0, Math.min(2, Math.floor((player.vy + 780) / 190))) };
-    if (player.vy > 200) return { sheet: "fall", frame: Math.floor(now * 11) % 4 };
-    return { sheet: "jump_peak", frame: Math.floor(now * 8) % 3 };
+    if (player.vy < -200) return stateFrame(HS.jump, (player.vy + 780) / 580 * HS.jump.frames.length);   // rising: faster = earlier frames
+    if (player.vy > 200) return stateFrame(HS.fall, rate(HS.fall) % HS.fall.frames.length);
+    return stateFrame(HS.jump_peak, rate(HS.jump_peak) % HS.jump_peak.frames.length);
   }
-  if (player.moving) return { sheet: "run", frame: Math.floor(player.runT * 16) % 10 };
-  return { sheet: "idle", frame: Math.floor(now / 0.17) % 4 };
+  if (player.moving) return stateFrame(HS.run, player.runT * HS.run.fps % HS.run.frames.length);
+  return stateFrame(HS.idle, rate(HS.idle) % HS.idle.frames.length);
 }
 
 // One frame of a sheet, feet at (cx, feet); face = 1 (right) or -1 (left)
@@ -2861,13 +2863,13 @@ function drawStickman() {
     drawSprite(g.sheet, g.frame, g.cx, g.feet, g.facing);
     ctx.restore();
   }
-  const fr = heroSprite();
+  let fr = heroSprite();
   const cx = player.x + player.w / 2, feet = player.y + player.h;
   heroFlash = null;
-  if (fr.sheet === "skill3" && fr.frame >= 14 && fr.frame <= 18) {
-    // The ultimate's flash frames fill the whole screen (skipped in Comfort Mode)
-    if (!settings.comfort) { heroFlash = fr.frame; return; }
-    fr.frame = 19;
+  if (fr.flash) {
+    // Flash frames (the ultimate's) fill the whole screen; Comfort Mode skips them
+    if (!settings.comfort) { heroFlash = fr; return; }
+    fr = stateFrame(HS.idle, 0);
   }
   drawSkinSlash(cx, feet);
   ctx.save();
@@ -2916,8 +2918,7 @@ function drawProjectiles() {
 }
 
 // --- Enemy sprites: one sheet per kind (see tools/make_enemy_sprites.py) ---
-// 8 frames wide, rows: idle 4, walk 8, attack 6 (0-2 wind-up, 3-5 strike), hit 2, death 6
-const FOE_ROW = { idle: 0, walk: 1, attack: 2, hit: 3, death: 4 };
+// 8 frames wide, rows: idle 4, walk 8, attack 6 (0-2 wind-up, 3-5 strike), hit 2, death 6 (which frames play is in animations.js)
 const FOE_SHEETS = {};
 for (const kind of Object.keys(FOES)) {
   const img = new Image();
@@ -2937,21 +2938,21 @@ function drawFoeFrame(kind, row, col, cx, feet, face) {
   ctx.restore();
 }
 
-// Which animation frame an enemy is showing, from what it's doing
+// Which animation frame an enemy is showing, from what it's doing: [row, column] in its sheet
 function foeFrame(o) {
-  const d = FOES[o.kind];
-  const third = (t, total) => Math.min(2, Math.floor(t / total * 3));   // wind-ups run through frames 0-2
-  if (o.stagger > 0) return [FOE_ROW.hit, o.stagger > 0.2 ? 0 : 1];
+  const d = FOES[o.kind], A = ANIM.foes[o.kind].anims;
+  const at = (a, i) => [a.row, a.frames[Math.max(0, Math.min(a.frames.length - 1, Math.floor(i)))]];
+  const across = (a, t, total) => at(a, t / total * a.frames.length);   // spread a list over a duration
+  if (o.stagger > 0) return at(A.hit, o.stagger > 0.2 ? 0 : 1);
   switch (o.ai) {
-    case "windup": case "warn": case "throw": return [FOE_ROW.attack, third(o.timer, d.windup)];
-    case "aim": return [FOE_ROW.attack, third(o.timer, d.windup)];
-    case "strike": return [FOE_ROW.attack, 3 + third(o.timer, ATTACK_DURATION)];
-    case "charge": return [FOE_ROW.attack, 4];
+    case "windup": case "warn": case "throw": case "aim": return across(A.windup, o.timer, d.windup);
+    case "strike": return across(A.strike, o.timer, ATTACK_DURATION);
+    case "charge": return at(A.charge, 0);
     case "recover":   // archers and bombers show the release; the rest just breathe
-      if (o.kind === "archer" || o.kind === "bomber") return [FOE_ROW.attack, 3 + Math.min(2, Math.floor(o.timer / 0.12))];
-      return [FOE_ROW.idle, Math.floor(o.age / 0.17) % 4];
+      if (o.kind === "archer" || o.kind === "bomber") return at(A.release, o.timer * (A.release.fps || 8));
+      return at(A.idle, o.age * (A.idle.fps || 6) % A.idle.frames.length);
   }
-  return [FOE_ROW.walk, Math.floor(o.runPhase / (Math.PI * 2) * 8) % 8];
+  return at(A.walk, o.runPhase / (Math.PI * 2) * A.walk.frames.length % A.walk.frames.length);
 }
 
 function drawFoe(o) {
@@ -2972,10 +2973,11 @@ function drawFoe(o) {
 }
 
 function drawCorpse(c) {
-  const col = Math.min(5, Math.floor(c.t / 0.1));
+  const A = ANIM.foes[c.kind].anims.death;
+  const [row, col] = [A.row, A.frames[Math.min(A.frames.length - 1, Math.floor(c.t * (A.fps || 10)))]];
   ctx.save();
   ctx.globalAlpha = Math.max(0, Math.min(1, (3.5 - c.t) / 1));   // fades out at the end
-  drawFoeFrame(c.kind, FOE_ROW.death, col, c.cx, c.feet, c.dir);
+  drawFoeFrame(c.kind, row, col, c.cx, c.feet, c.dir);
   ctx.restore();
 }
 
@@ -3207,11 +3209,11 @@ function draw() {
   ctx.fillText(`HI ${pad5(high(runDiff))}  ${pad5(score)}`, W - 20, 36);
 
   // The ultimate's flash frames cover the whole screen for a moment
-  if (heroFlash !== null && SHEETS.skill3.complete) {
+  if (heroFlash && SHEETS[heroFlash.sheet].complete) {
     ctx.save();
     ctx.globalAlpha = 0.55;
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(SHEETS.skill3, heroFlash * FRAME_W, 0, FRAME_W, FRAME_H, 0, 0, W, H);
+    ctx.drawImage(SHEETS[heroFlash.sheet], heroFlash.frame * FRAME_W, 0, FRAME_W, FRAME_H, 0, 0, W, H);
     ctx.restore();
   }
 }
