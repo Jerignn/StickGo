@@ -515,7 +515,7 @@ if (devGold > 0) {
 //   edge = outline, hi = highlight ridge, guard = crossguard and grip, gem = jewel on the guard,
 //   shape = blade outline from PROFILES, curve = sabre-like bend, glow = soft halo,
 //   fx = animated effect (see swordFx) in fxColor, hilt = visible handle, wing = winged guard.
-// legacy skins stay in the inventory of people who bought them but are no longer sold.
+// skins that are removed from this list also disappear from saved inventories.
 const RARITIES = {
   common:    { label: "COMMON",    color: "#7ed957", glow: "rgba(126, 217, 87, 0.40)" },
   uncommon:  { label: "UNCOMMON",  color: "#4aa8ff", glow: "rgba(74, 168, 255, 0.45)" },
@@ -523,72 +523,16 @@ const RARITIES = {
   legendary: { label: "LEGENDARY", color: "#ffa930", glow: "rgba(255, 169, 48, 0.60)" }
 };
 const SWORD_SKINS = {
-  starter: { name: "STARTER SWORD", rarity: null, price: 0, blade: null, guard: null, len: 26, width: 3 },
-
-  // Common
-  wooden:  { name: "TRAINING WOODEN BOKKEN", rarity: "common", price: 25,
-             blade: "#a8743d", edge: "#4a2e14", hi: "#c99358", guard: "#5a3a1a",
-             len: 30, width: 4.4, shape: "bokken" },
-  sabre:   { name: "RUSTY CUTLASS", rarity: "common", price: 60,
-             blade: "#a5a8a6", edge: "#4a4d4f", hi: "#d6d9d8", guard: "#5b3a22",
-             len: 30, width: 4.4, shape: "saber", curve: 0.16, fx: "rust", fxColor: "#a8522a" },
-  cleaver: { name: "SCRAP METAL CLEAVER", rarity: "common", price: 90,
-             blade: "#9aa0a3", edge: "#3f4446", hi: "#cfd4d6", guard: "#cdbb8a",
-             len: 27, width: 9, shape: "cleaver", fx: "rust", fxColor: "#8a6a3a" },
-  oldguard: { name: "OLD GUARD'S SABER", rarity: "common", price: 120,
-             blade: "#cfd4d8", edge: "#5d646a", hi: "#ffffff", guard: "#b7842b",
-             len: 32, width: 4, shape: "saber", curve: 0.12 },
-  bronze:  { name: "BRONZE SWORD", rarity: "common", price: 40, legacy: true,
-             blade: "#e3ac3f", edge: "#6a4a12", guard: "#5a3a12", len: 27, width: 3.5 },
-
-  // Uncommon
-  spiketooth: { name: "SPIKE-TOOTH BLADE", rarity: "uncommon", price: 500,
-             blade: "#454c56", edge: "#111418", hi: "#8892a0", guard: "#2a2f36",
-             len: 32, width: 6.4, shape: "serrated" },
-  electro: { name: "ELECTRO-BATON SWORD", rarity: "uncommon", price: 750,
-             blade: "#a9c4d6", edge: "#2f5878", hi: "#f2fbff", guard: "#2d4a63",
-             len: 31, width: 4, shape: "blade", fx: "electric", fxColor: "#8fe9ff", glow: "#4fc3f7" },
-  obsidian: { name: "OBSIDIAN SHARD", rarity: "uncommon", price: 1000,
-             blade: "#372a58", edge: "#6a50b4", hi: "#a583f0", guard: "#2a2048",
-             len: 30, width: 7.4, shape: "shard" },
-  jungle:  { name: "JUNGLE MACHETE", rarity: "uncommon", price: 1250,
-             blade: "#566b34", edge: "#1f2a10", hi: "#9fc45a", guard: "#4a3418",
-             len: 30, width: 7, shape: "machete", fx: "slime", fxColor: "#7ee04a" },
-
-  // Rare
-  crimson: { name: "CRIMSON FURY", rarity: "rare", price: 15000,
-             blade: "#c4162d", edge: "#3d050d", hi: "#ff7a66", guard: "#3a0a10",
-             len: 33, width: 6.4, shape: "flame", fx: "flame", fxColor: "#ff5a2a", glow: "#ff2a2a" },
-  shadow:  { name: "SHADOW EDGE", rarity: "rare", price: 18000,
-             blade: "#1c1430", edge: "#05030a", hi: "#7a4fd0", guard: "#120b20",
-             len: 33, width: 6.4, shape: "flame", fx: "wisps", fxColor: "#8a5cf0", glow: "#7a3fe0" },
-  aero:    { name: "AERO-SABER", rarity: "rare", price: 22000,
-             blade: "#dff6fb", edge: "#6fb4c8", hi: "#ffffff", guard: "#5d8fa0",
-             len: 33, width: 5, shape: "saber", curve: 0.2, fx: "wisps", fxColor: "#d8fbff", glow: "#8fe3ff" },
-  frostbite: { name: "FROSTBITE", rarity: "rare", price: 25000,
-             blade: "#a8e0ff", edge: "#3a82b4", hi: "#f2fcff", guard: "#2c5f8a",
-             len: 32, width: 7.4, shape: "ice", fx: "sparkle", fxColor: "#ffffff", glow: "#6fd0ff" },
-
-  // Legendary
-  dragon:  { name: "DRAGON'S BREATH", rarity: "legendary", price: 100000,
-             blade: "#7a1a0a", tip: "#ffb02e", edge: "#2a0803", hi: "#ffd36a", guard: "#3a2a1c",
-             len: 34, width: 8.4, shape: "broad", fx: "flame", fxColor: "#ff8a1f", glow: "#ff6a00", gem: "#ff3b1f" },
-  laser:   { name: "CYBERNETIC LASER BLADE", rarity: "legendary", price: 100000,
-             blade: "#7ff4ff", guard: "#46505e", len: 34, width: 3.6, shape: "laser",
-             fx: "laser", fxColor: "#27d7ff", glow: "#27d7ff", gem: "#27d7ff", hilt: true },
-  voidbringer: { name: "VOID BRINGER", rarity: "legendary", price: 100000,
-             blade: "#2a0f4d", tip: "#6b2fd6", edge: "#080214", hi: "#b27bff", guard: "#1a0a30",
-             len: 34, width: 8, shape: "broad", fx: "void", fxColor: "#c490ff", glow: "#8a3dff", gem: "#c490ff" },
-  sun:     { name: "CELESTIAL SUN-BLADE", rarity: "legendary", price: 100000,
-             blade: "#ffd34d", tip: "#fffbe0", edge: "#a8740a", hi: "#ffffff", guard: "#e0a82a",
-             len: 34, width: 6, shape: "blade", fx: "sparkle", fxColor: "#fff3a8", glow: "#ffd34d",
-             gem: "#ff7a2a", wing: true }
+  starter: { name: "STARTER SWORD", rarity: null, price: 0, blade: null, guard: null, len: 26, width: 3 }
 };
 const fmt = (n) => n.toLocaleString("en-US");
 const skinState = Object.assign(
   { owned: ["starter"], equipped: "starter" },
   JSON.parse(localStorage.getItem("stickgo-skins") || "{}")
 );
+skinState.owned = skinState.owned.filter((id) => SWORD_SKINS[id]);   // swords that are no longer sold leave the inventory
+if (!skinState.owned.includes("starter")) skinState.owned.unshift("starter");
+if (!SWORD_SKINS[skinState.equipped]) skinState.equipped = "starter";
 function saveSkins() { localStorage.setItem("stickgo-skins", JSON.stringify(skinState)); }
 function equippedSkin() { return SWORD_SKINS[skinState.equipped] || SWORD_SKINS.starter; }
 
@@ -916,6 +860,7 @@ function refreshShop() {
     btn.addEventListener("click", () => shopTap(id));
     row.appendChild(card);
   }
+  if (!row.children.length) row.innerHTML = "<p>NO SWORDS YET</p>";
   sections.append(tabs, row);
 }
 
