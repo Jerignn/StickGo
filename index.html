@@ -524,7 +524,7 @@ const RARITIES = {
   legendary: { label: "LEGENDARY", color: "#ffa930", glow: "rgba(255, 169, 48, 0.60)" }
 };
 const SWORD_SKINS = {
-  starter: { name: "STARTER SWORD", rarity: null, price: 0, blade: null, guard: null, len: 26, width: 3 }
+  starter: { name: "STARTER SCYTHE", rarity: null, price: 0, blade: null, guard: null, len: 26, width: 3 }
 };
 const fmt = (n) => n.toLocaleString("en-US");
 const skinState = Object.assign(
@@ -861,7 +861,7 @@ function refreshShop() {
     btn.addEventListener("click", () => shopTap(id));
     row.appendChild(card);
   }
-  if (!row.children.length) row.innerHTML = "<p>NO SWORDS YET</p>";
+  if (!row.children.length) row.innerHTML = "<p>NO SCYTHES YET</p>";
   sections.append(tabs, row);
 }
 
@@ -904,7 +904,7 @@ function refreshInventory() {
       row.appendChild(card);
     }
   }
-  if (skinState.owned.length < 2) invMessage("BUY MORE SWORDS IN THE SHOP");
+  if (skinState.owned.length < 2) invMessage("BUY MORE SCYTHES IN THE SHOP");
 }
 
 function equipSkin(id) {
@@ -2643,24 +2643,75 @@ function drawBlade(g, hand, angle, skin, clock = performance.now() / 1000) {
 }
 
 // Shop card picture: the sword lying almost flat, with a short handle
+// The picture on a shop / inventory card: his scythe, in the colours and glow of that skin.
+// (The starter one is black, like the one the hero carries.)
 function drawSwordPreview(canvas, skin) {
   const g = canvas.getContext("2d");
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, canvas.width, canvas.height);
-  const scale = canvas.width / 44;  // 44 game units across, ~17 down
+  const scale = canvas.width / 44;   // 44 units across, ~17 down
   g.setTransform(scale, 0, 0, scale, 0, 0);
-  const angle = 1.64;  // pointing right, a touch upwards
-  const hand = { x: 7, y: 9 };
+  const clock = performance.now() / 1000;
+  const blade = skin.blade || "#15151a", edge = skin.edge || "#000000", hi = skin.hi || "#5a5a66";
+  const pulse = 0.6 + 0.4 * Math.sin(clock * 5);
   g.lineCap = "round";
-  g.strokeStyle = skin.guard || "#8a8a8a";
-  g.lineWidth = 3;
-  const butt = limb(hand, angle, -3);
-  g.beginPath(); g.moveTo(butt.x, butt.y); g.lineTo(hand.x, hand.y); g.stroke();
-  drawBlade(g, hand, angle, skin.blade ? skin : { ...skin, blade: "#9fb0c2", guard: "#cfcfcf" });
-}
+  g.lineJoin = "round";
 
-// The hero: a dark body with a blue rim light, shoes, hands, a red scarf streaming behind
-// him and glowing eyes. When he's down the scarf goes limp and his eyes turn to Xs.
+  // Haft, with a ring where the blade is mounted and a cap on the end
+  g.strokeStyle = "#000000";
+  g.lineWidth = 2.8;
+  g.beginPath(); g.moveTo(4.5, 15); g.lineTo(32, 4); g.stroke();
+  g.strokeStyle = skin.guard || "#4a3320";
+  g.lineWidth = 1.7;
+  g.beginPath(); g.moveTo(4.5, 15); g.lineTo(32, 4); g.stroke();
+  g.fillStyle = skin.guard || "#3a2a1c";
+  g.beginPath(); g.arc(4.5, 15, 1.7, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = edge;
+  g.lineWidth = 1;
+  g.beginPath(); g.moveTo(27, 6); g.lineTo(28.5, 7.8); g.stroke();   // collar
+
+  // The blade: a crescent hooking down from the top of the haft
+  const crescent = () => {
+    g.beginPath();
+    g.moveTo(30, 5.5);
+    g.quadraticCurveTo(38, -1.5, 42.3, 10.5);   // outer (cutting) edge out to the tip
+    g.quadraticCurveTo(37.5, 4.8, 30, 7.4);      // back along the inner edge
+    g.closePath();
+  };
+  g.save();
+  if (skin.glow) { g.shadowColor = skin.glow; g.shadowBlur = 5 + 4 * pulse; }
+  crescent();
+  if (skin.tip) {
+    const grad = g.createLinearGradient(30, 6, 42, 10);
+    grad.addColorStop(0, blade); grad.addColorStop(1, skin.tip);
+    g.fillStyle = grad;
+  } else g.fillStyle = blade;
+  g.fill();
+  g.shadowBlur = 0;
+  g.strokeStyle = edge;
+  g.lineWidth = 0.9;
+  g.stroke();
+  g.restore();
+  g.strokeStyle = hi;   // highlight along the cutting edge
+  g.lineWidth = 0.8;
+  g.beginPath(); g.moveTo(31.5, 4.8); g.quadraticCurveTo(38, 0.3, 41.2, 9); g.stroke();
+  if (skin.gem) { g.fillStyle = skin.gem; g.beginPath(); g.arc(29.5, 6.3, 1.2, 0, Math.PI * 2); g.fill(); }
+
+  // Effects that drift off the cutting edge (sparkles, embers, wisps...)
+  if (skin.fx) {
+    const point = (t) => ({ x: (1 - t) * (1 - t) * 30 + 2 * (1 - t) * t * 38 + t * t * 42.3,
+                           y: (1 - t) * (1 - t) * 5.5 + 2 * (1 - t) * t * -1.5 + t * t * 10.5 });
+    const seed = Math.floor(clock * 7);
+    g.fillStyle = skin.fxColor || "#ffffff";
+    for (let i = 0; i < 6; i++) {
+      const t = 0.15 + 0.8 * rnd(i * 3.7 + seed), p = point(t), r = 0.4 + 0.7 * rnd(i * 1.3 + seed);
+      const lift = skin.fx === "flame" || skin.fx === "wisps" ? -2.5 * rnd(i + seed * 0.5) : 0;
+      g.globalAlpha = 0.5 + 0.5 * rnd(i * 9 + seed);
+      g.beginPath(); g.arc(p.x + (rnd(i * 5 + seed) - 0.5) * 2, p.y - 1 + lift, r, 0, Math.PI * 2); g.fill();
+    }
+    g.globalAlpha = 1;
+  }
+}
 const HERO_HEAD = 9.5;   // the hero's head is bigger than the others', like the art
 function drawHero(pts, down = false) {
   const t = performance.now() / 1000;
