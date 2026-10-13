@@ -598,7 +598,7 @@ let speed, score, distance, obstacles, clouds, groundBits, spawnTimer, lastTime;
 let runDiff = settings.difficulty;  // difficulty of the current run; settings changes apply next run
 let flashTime = 0;
 let coins = [];              // gold coins dropped by enemies, waiting to be picked up
-let corpses = [];            // ragdolls of slain enemies
+let corpses = [];            // slain enemies lying where they fell (they play their death animation)
 let runGold = 0;
 let popups = [];             // floating "+10" texts
 let wave = 1;
@@ -687,7 +687,6 @@ function reset() {
   bossBanner = null;
   wave = 0;
   waveBanner = 0;
-  ragdoll = null;
   shakeTime = 0;
   clouds = Array.from({ length: 4 }, () => ({
     x: Math.random() * W,
@@ -1756,7 +1755,7 @@ function updateFoes(dt) {
         o.dir = toward;
         o.draw = Math.min(1, o.timer / d.windup);
         if (o.timer >= d.windup) {
-          arrows.push({ x: ocx + o.dir * 20, y: GROUND_Y - 36, vx: o.dir * 430, dmg: d.dmg });
+          arrows.push({ x: ocx + o.dir * 20, y: GROUND_Y - 46, vx: o.dir * 430, dmg: d.dmg });
           sfx.arrow();
           o.draw = 0; o.ai = "recover"; o.timer = 0;
         }
@@ -2021,7 +2020,7 @@ function update(dt) {
   }
   sparks = sparks.filter((p) => p.t < p.life);
   updateCoins(dt);
-  corpses = corpses.filter((c) => c.time < 4);   // bodies fade away after a few seconds
+  corpses = corpses.filter((c) => c.t < 3.5);   // bodies fade away after a few seconds
 }
 
 // --- Enemies & gold ---
@@ -2047,18 +2046,10 @@ function drawGoldPopup(p) {
 
 function killEnemy(o, gold = 1 + Math.floor(Math.random() * 3)) {
   o.dead = true;
-  const heavy = o.scale ? 0.6 : 1;   // big ones don't fly as far
   shakeTime = Math.max(shakeTime, o.scale ? 0.25 : 0.1);
   sfx.kill();
-  // He's flung away from the sword, upper body first
-  const corpse = makeRagdoll(enemyPose(o), (name) => {
-    const upper = UPPER_BODY.has(name);
-    return [((upper ? 300 : 170) + Math.random() * 80) * heavy * (o.fling || 1), (upper ? -380 : -180) * heavy];
-  });
-  corpse.look = o.look;     // so a ninja or brute still looks like one when he's down
-  corpse.type = o.type;
-  corpse.scale = o.scale;
-  corpses.push(corpse);
+  // He topples away from the blow and plays his death animation
+  corpses.push({ kind: o.kind, cx: o.x + o.w / 2, feet: o.y + o.h, dir: o.dir, fling: o.fling || 1, t: 0 });
   // Show how much gold he dropped, floating up from where he fell
   dropGold(o.x + o.w / 2, o.y + 20, gold, o.y - 6);
 }
@@ -2103,82 +2094,8 @@ function gameOver() {
   showMenu("over");
 }
 
-// --- Ragdoll ---
-// On a hit the world freezes and the stickman's joints become free points
-// held together by bone-length constraints (Verlet integration).
-const RAGDOLL_STEP = 1 / 120;
-const RAGDOLL_DURATION = 1.3;  // seconds before the game-over menu appears
-const BONES = [
-  ["head", "neck"], ["neck", "shoulder"], ["shoulder", "hip"],
-  ["shoulder", "elbowF"], ["elbowF", "handF"], ["shoulder", "elbowB"], ["elbowB", "handB"],
-  ["hip", "kneeF"], ["kneeF", "footF"], ["hip", "kneeB"], ["kneeB", "footB"]
-];
-// Extra links that keep the head and torso from folding up unnaturally
-const BRACES = [["head", "shoulder"]];
-const UPPER_BODY = new Set(["head", "neck", "shoulder", "elbowF", "handF", "elbowB", "handB"]);
-
-let ragdoll = null;
+const DYING_TIME = 1.3;   // seconds the hero's fall plays before the game-over menu appears
 let shakeTime = 0;
-
-// Turns a pose into free points; velocity(name) gives each joint's [vx, vy]
-function makeRagdoll(pose, velocity) {
-  const points = {};
-  for (const [name, pt] of Object.entries(pose)) {
-    const [vx, vy] = velocity(name);
-    points[name] = {
-      x: pt.x, y: pt.y,
-      px: pt.x - vx * RAGDOLL_STEP, py: pt.y - vy * RAGDOLL_STEP,
-      r: name === "head" ? BODY.headR : 2
-    };
-  }
-  const links = [...BONES, ...BRACES].map(([a, b]) =>
-    [points[a], points[b], Math.hypot(points[a].x - points[b].x, points[a].y - points[b].y)]);
-  return { points, links, time: 0, acc: 0, clamp: false };
-}
-
-function updateRagdoll(rd, dt) {
-  rd.time += dt;
-  rd.acc += dt;
-  while (rd.acc >= RAGDOLL_STEP) {
-    ragdollStep(rd);
-    rd.acc -= RAGDOLL_STEP;
-  }
-}
-
-function ragdollStep(rd) {
-  const pts = Object.values(rd.points);
-  const g = GRAVITY * RAGDOLL_STEP * RAGDOLL_STEP;
-
-  for (const p of pts) {
-    const vx = (p.x - p.px) * 0.998;
-    const vy = (p.y - p.py) * 0.998;
-    p.px = p.x;
-    p.py = p.y;
-    p.x += vx;
-    p.y += vy + g;
-  }
-
-  for (let i = 0; i < 8; i++) {
-    for (const [a, b, len] of rd.links) {
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const d = Math.hypot(dx, dy) || 0.001;
-      const k = (d - len) / d / 2;
-      a.x += dx * k; a.y += dy * k;
-      b.x -= dx * k; b.y -= dy * k;
-    }
-    for (const p of pts) collidePoint(p, rd.clamp);
-  }
-
-  // Ground friction so he skids to a stop instead of sliding forever
-  for (const p of pts) {
-    if (p.y >= GROUND_Y - p.r - 0.5) p.px = p.x - (p.x - p.px) * 0.8;
-  }
-}
-
-function collidePoint(p, clampToScreen) {
-  if (p.y > GROUND_Y - p.r) p.y = GROUND_Y - p.r;
-  if (clampToScreen) p.x = Math.max(p.r, Math.min(W - p.r, p.x));
-}
 
 // --- Drawing ---
 // Day/night cycle: every 1000 points it fades to night around 700 and back by 1000
@@ -2334,42 +2251,6 @@ function getPose(p = player) {
     pose["elbow" + side] = limb(shoulder, upper, BODY.upperArm);
     pose["hand" + side] = limb(pose["elbow" + side], upper + elbow, BODY.foreArm);
   });
-  return pose;
-}
-
-// Archers and bombers hold their arms differently from a runner (drawn facing right here;
-// enemyPose mirrors the result)
-function shooterArms(pose, o) {
-  const s = pose.shoulder;
-  if (o.type === "archer") {
-    const pull = o.draw || 0;   // 0 = string at rest, 1 = fully drawn
-    pose.elbowF = { x: s.x + 9, y: s.y + 2 };
-    pose.handF = { x: s.x + 19, y: s.y + 2 };
-    pose.elbowB = { x: s.x + 8 - 5 * pull, y: s.y + 5 };
-    pose.handB = { x: s.x + 16 - 15 * pull, y: s.y + 2 };
-  } else if (o.windup > 0) {
-    pose.elbowF = { x: s.x + 2, y: s.y - 10 };
-    pose.handF = { x: s.x + 5, y: s.y - 22 };
-  } else {
-    pose.elbowF = { x: s.x + 6, y: s.y + 8 };
-    pose.handF = { x: s.x + 12, y: s.y + 6 };
-  }
-}
-
-// Enemies run towards the player, so their pose is mirrored to face left.
-// Big ones (o.scale) are scaled up from their feet.
-function enemyPose(o) {
-  const pose = getPose(o);
-  if (o.type === "archer" || o.type === "bomber") shooterArms(pose, o);
-  const cx = o.x + o.w / 2;
-  for (const pt of Object.values(pose)) pt.x = 2 * cx - pt.x;
-  if (o.scale) {
-    const base = o.y + o.h;
-    for (const pt of Object.values(pose)) {
-      pt.x = cx + (pt.x - cx) * o.scale;
-      pt.y = base + (pt.y - base) * o.scale;
-    }
-  }
   return pose;
 }
 
@@ -2835,7 +2716,7 @@ function drawSwordPreview(canvas, skin) {
 // The hero: a dark body with a blue rim light, shoes, hands, a red scarf streaming behind
 // him and glowing eyes. When he's down the scarf goes limp and his eyes turn to Xs.
 const HERO_HEAD = 9.5;   // the hero's head is bigger than the others', like the art
-function drawHero(pts, down = !!ragdoll) {
+function drawHero(pts, down = false) {
   const t = performance.now() / 1000;
   const h = pts.head;
 
@@ -3034,146 +2915,68 @@ function drawProjectiles() {
   }
 }
 
-// The bow an archer holds out in front of him (he faces left); the string pulls back as he aims
-function drawBow(pts, o) {
-  const hand = pts.handF, pull = o.draw || 0;
-  const cx = hand.x + 17, r = 17, a = Math.PI - 1.0;
-  ctx.lineCap = "round";
-  ctx.strokeStyle = "#8a5a24";
-  ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.arc(cx, hand.y, r, a, Math.PI + 1.0); ctx.stroke();
-  const ends = [{ x: cx + r * Math.cos(a), y: hand.y + r * Math.sin(a) },
-                { x: cx + r * Math.cos(a), y: hand.y - r * Math.sin(a) }];
-  ctx.strokeStyle = colors.ink;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(ends[0].x, ends[0].y);
-  if (pull > 0.05) ctx.lineTo(pts.handB.x, pts.handB.y);
-  ctx.lineTo(ends[1].x, ends[1].y);
-  ctx.stroke();
-  if (pull > 0.05) {   // the arrow, nocked and ready
-    ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.moveTo(pts.handB.x, pts.handB.y); ctx.lineTo(hand.x - 14, hand.y); ctx.stroke();
-    ctx.fillStyle = colors.ink;
-    ctx.beginPath();
-    ctx.moveTo(hand.x - 19, hand.y); ctx.lineTo(hand.x - 12, hand.y - 3); ctx.lineTo(hand.x - 12, hand.y + 3);
-    ctx.fill();
-  }
+// --- Enemy sprites: one sheet per kind (see tools/make_enemy_sprites.py) ---
+// 8 frames wide, rows: idle 4, walk 8, attack 6 (0-2 wind-up, 3-5 strike), hit 2, death 6
+const FOE_ROW = { idle: 0, walk: 1, attack: 2, hit: 3, death: 4 };
+const FOE_SHEETS = {};
+for (const kind of Object.keys(FOES)) {
+  const img = new Image();
+  img.src = `pictures/foe_${kind}.png`;
+  FOE_SHEETS[kind] = img;
+}
+const FOE_SC = { brute: 2.0, boss: 2.8 };   // everyone else is drawn at the hero's size (SC)
+
+function drawFoeFrame(kind, row, col, cx, feet, face) {
+  const img = FOE_SHEETS[kind], sc = FOE_SC[kind] || SC;
+  if (!img.complete || !img.naturalWidth) return;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.translate(cx, feet + 2 * sc);
+  ctx.scale(face * sc, sc);
+  ctx.drawImage(img, col * FRAME_W, row * FRAME_H, FRAME_W, FRAME_H, -FRAME_W / 2, -FRAME_H, FRAME_W, FRAME_H);
+  ctx.restore();
 }
 
-function drawEnemy(pts, alive, shield, o = {}) {
-  const look = o.look, k = o.scale || 1;
-  const t = performance.now() / 1000;
-  let ink = colors.enemy, inkBack = colors.enemyBack;
-  if (look === "ninja") { ink = colors.ninja; inkBack = colors.ninjaBack; }
-  else if (look === "phantom") { ink = colors.ghost; inkBack = colors.ghostBack; }
-  if (o.flash > 0) ink = "#ff6a6a";   // a boss that's just been hit
-  drawFigure(pts, ink, inkBack, 4 * (1 + (k - 1) * 0.6), BODY.headR * k);
-
-  if (shield) {
-    // Round shield held out in front (he faces left), seen side-on
-    const sx = pts.hip.x - 11, sy = pts.shoulder.y + 13;
-    ctx.fillStyle = SHIELD_METAL;
-    ctx.strokeStyle = colors.enemy;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.ellipse(sx, sy, 5, 15, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = colors.enemy;
-    ctx.beginPath(); ctx.arc(sx - 1, sy, 2, 0, Math.PI * 2); ctx.fill();
+// Which animation frame an enemy is showing, from what it's doing
+function foeFrame(o) {
+  const d = FOES[o.kind];
+  const third = (t, total) => Math.min(2, Math.floor(t / total * 3));   // wind-ups run through frames 0-2
+  if (o.stagger > 0) return [FOE_ROW.hit, o.stagger > 0.2 ? 0 : 1];
+  switch (o.ai) {
+    case "windup": case "warn": case "throw": return [FOE_ROW.attack, third(o.timer, d.windup)];
+    case "aim": return [FOE_ROW.attack, third(o.timer, d.windup)];
+    case "strike": return [FOE_ROW.attack, 3 + third(o.timer, ATTACK_DURATION)];
+    case "charge": return [FOE_ROW.attack, 4];
+    case "recover":   // archers and bombers show the release; the rest just breathe
+      if (o.kind === "archer" || o.kind === "bomber") return [FOE_ROW.attack, 3 + Math.min(2, Math.floor(o.timer / 0.12))];
+      return [FOE_ROW.idle, Math.floor(o.age / 0.17) % 4];
   }
-
-  const h = pts.head, f = (v) => v * k;
-  if (look === "brute") {   // a spiked club in his fist
-    const hd = pts.handF;
-    ctx.strokeStyle = "#6a4a28";
-    ctx.lineWidth = 3.5 * k * 0.7;
-    line(hd.x, hd.y, hd.x - f(7), hd.y - f(19));
-    ctx.fillStyle = "#6a4a28";
-    ctx.beginPath(); ctx.arc(hd.x - f(8), hd.y - f(21), f(4.2), 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = SHIELD_METAL;
-    for (const [dx, dy] of [[-4, -5], [4, -5], [0, -8]]) {
-      ctx.beginPath(); ctx.arc(hd.x - f(8) + f(dx), hd.y - f(21) + f(dy), f(1.3), 0, Math.PI * 2); ctx.fill();
-    }
-  }
-  if (o.type === "boss") {   // horns
-    ctx.fillStyle = "#e8e0c8";
-    for (const s of [-1, 1]) {
-      ctx.beginPath();
-      ctx.moveTo(h.x + s * f(4), h.y - f(6));
-      ctx.lineTo(h.x + s * f(11), h.y - f(15));
-      ctx.lineTo(h.x + s * f(9), h.y - f(3));
-      ctx.fill();
-    }
-  }
-  if (look === "archer") {
-    drawBow(pts, o);
-    ctx.fillStyle = "#3f7d3a";   // a feathered cap
-    ctx.beginPath(); ctx.moveTo(h.x - 8, h.y - 4); ctx.lineTo(h.x + 4, h.y - 17); ctx.lineTo(h.x + 8, h.y - 3); ctx.fill();
-  }
-  if (look === "bomber") {
-    ctx.strokeStyle = "#b8862b";   // bandolier
-    ctx.lineWidth = 2;
-    line(pts.shoulder.x - 4, pts.shoulder.y + 1, pts.hip.x + 4, pts.hip.y - 3);
-    if (o.holding) {
-      const b = { x: pts.handF.x - 2, y: pts.handF.y - 7 };
-      ctx.fillStyle = "#222";
-      ctx.beginPath(); ctx.arc(b.x, b.y, 6, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = "#888"; ctx.lineWidth = 1.2;
-      line(b.x + 2, b.y - 5, b.x + 5, b.y - 10);
-      ctx.fillStyle = "#ffb02e"; ctx.beginPath(); ctx.arc(b.x + 5, b.y - 10, 1.8, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-  if (look === "ninja") {   // red headband with fluttering tails
-    ctx.strokeStyle = "#e02020";
-    ctx.lineWidth = 2.4;
-    line(h.x - 8, h.y - 2.5, h.x + 8, h.y - 2.5);
-    ctx.lineWidth = 1.8;
-    for (const s of [0, 1]) {
-      ctx.beginPath();
-      ctx.moveTo(h.x + 7, h.y - 2.5);
-      ctx.quadraticCurveTo(h.x + 15, h.y - 5 + s * 5 + Math.sin(t * 14 + s * 2) * 3, h.x + 24, h.y - 2 + s * 7 + Math.sin(t * 14 + s) * 4);
-      ctx.stroke();
-    }
-  }
-
-  const eye = look === "phantom" ? "#7fe9ff" : EYE_RED;
-  const face = look === "phantom" ? "#1a2440" : colors.sky;
-  // Angry brows slanting down towards the middle, over glowing eyes
-  // (he faces left, so the face is on the left of the head)
-  ctx.strokeStyle = face;
-  ctx.lineWidth = 1.6 + (k - 1);
-  line(h.x - f(7.5), h.y - f(5.5), h.x - f(3.5), h.y - f(2.8));
-  line(h.x + f(2), h.y - f(5.5), h.x - f(1.5), h.y - f(2.8));
-  ctx.fillStyle = eye;
-  if (alive) { ctx.shadowColor = eye; ctx.shadowBlur = 6; }
-  ctx.beginPath(); ctx.arc(h.x - f(4.8), h.y - f(0.8), f(1.8), 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(h.x - f(0.2), h.y - f(0.8), f(1.8), 0, Math.PI * 2); ctx.fill();
-  ctx.shadowBlur = 0;
-  // Snarl
-  ctx.strokeStyle = face;
-  ctx.lineWidth = 1.2 + (k - 1) * 0.6;
-  line(h.x - f(5), h.y + f(4), h.x - f(1.5), h.y + f(3.2));
+  return [FOE_ROW.walk, Math.floor(o.runPhase / (Math.PI * 2) * 8) % 8];
 }
 
-// Enemies are drawn facing left; the ones on his left are flipped to face right
 function drawFoe(o) {
-  const pts = enemyPose(o);
+  const cx = o.x + o.w / 2, feet = o.y + o.h;
+  const [row, col] = foeFrame(o);
   ctx.save();
   ctx.globalAlpha = Math.min(1, o.age / 0.25) * (o.solid === false ? 0.3 : 1);   // fades in from the portal; ghosts flicker
-  if (o.dir === 1) {
-    const cx = o.x + o.w / 2;
-    ctx.translate(cx, 0);
-    ctx.scale(-1, 1);
-    ctx.translate(-cx, 0);
-  }
-  drawEnemy(pts, true, false, o);
+  if (o.flash > 0.04) { ctx.shadowColor = "#ffffff"; ctx.shadowBlur = 10; }       // a white glow when it's hit or about to charge
+  drawFoeFrame(o.kind, row, col, cx, feet, o.dir);
   ctx.restore();
-  if (o.maxHp > 1 && o.hp < o.maxHp) {   // brutes show how much they have left
-    const cx = o.x + o.w / 2;
+  if (o.hp < o.maxHp) {   // how much it has left
+    const top = feet - 54 * (FOE_SC[o.kind] || SC) - 8;
     ctx.fillStyle = colors.inkBack;
-    ctx.fillRect(cx - 18, o.y - 10, 36, 4);
+    ctx.fillRect(cx - 18, top, 36, 4);
     ctx.fillStyle = EYE_RED;
-    ctx.fillRect(cx - 18, o.y - 10, 36 * o.hp / o.maxHp, 4);
+    ctx.fillRect(cx - 18, top, 36 * o.hp / o.maxHp, 4);
   }
+}
+
+function drawCorpse(c) {
+  const col = Math.min(5, Math.floor(c.t / 0.1));
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, (3.5 - c.t) / 1));   // fades out at the end
+  drawFoeFrame(c.kind, FOE_ROW.death, col, c.cx, c.feet, c.dir);
+  ctx.restore();
 }
 
 function drawCoin(c) {
@@ -3277,7 +3080,7 @@ function draw() {
   const specks = settings.comfort ? 14 : groundBits.length;
   for (let i = 0; i < specks; i++) ctx.fillRect(groundBits[i].x, groundBits[i].y, groundBits[i].w, 2);
 
-  for (const c of corpses) drawEnemy(c.points, false, false, c);
+  for (const c of corpses) drawCorpse(c);
   portals.forEach(drawPortal);
   for (const o of foes) drawFoe(o);
   drawProjectiles();
@@ -3423,9 +3226,12 @@ function loop(time) {
   }
   if (state === "dying") {
     dyingT += dt;
-    if (dyingT >= RAGDOLL_DURATION) gameOver();
+    if (dyingT >= DYING_TIME) gameOver();
   }
-  for (const c of corpses) updateRagdoll(c, dt);
+  for (const c of corpses) {
+    c.t += dt;
+    c.cx += c.fling * Math.max(0, 150 * (1 - c.t * 3)) * dt;   // slides a little from the blow
+  }
   if (shakeTime > 0) shakeTime -= dt;
   if (flashTime > 0) flashTime -= dt;
   if (waveBanner > 0 && state === "running") waveBanner -= dt;
