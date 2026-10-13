@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StickGo Sprite Editor</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #14161c;
+    color: #d6d6d6;
+    font: 13px "Courier New", monospace;
+    display: grid;
+    grid-template-columns: 210px 1fr 250px;
+    grid-template-rows: auto 1fr auto;
+    height: 100vh;
+    gap: 0;
+  }
+  header { grid-column: 1 / 4; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; background: #1d2029; border-bottom: 2px solid #2d313d; }
+  header h1 { font-size: 15px; margin: 0 10px 0 0; letter-spacing: 2px; color: #ffd34d; }
+  button, select, input[type=number] {
+    background: #2a2d36; color: #d6d6d6; border: 2px solid #4a4f5e; border-radius: 6px;
+    font: inherit; padding: 5px 9px; cursor: pointer;
+  }
+  button:hover { border-color: #d6d6d6; }
+  button.active { border-color: #ffd34d; color: #ffd34d; }
+  input[type=number] { width: 60px; cursor: text; }
+  .panel { padding: 10px; overflow-y: auto; background: #181b22; }
+  .panel h2 { font-size: 12px; letter-spacing: 2px; color: #8892a0; margin: 12px 0 6px; }
+  .panel h2:first-child { margin-top: 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-bottom: 5px; }
+  #tools button { width: 46px; padding: 6px 0; }
+  #palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+  #palette div { aspect-ratio: 1; border: 2px solid #4a4f5e; border-radius: 4px; cursor: pointer; }
+  #palette div.sel { border-color: #fff; }
+  #palette div.clear { background: repeating-conic-gradient(#888 0 25%, #ccc 0 50%) 50% / 10px 10px; }
+  main { display: flex; align-items: center; justify-content: center; overflow: auto; background: #0f1116; position: relative; }
+  #view { image-rendering: pixelated; cursor: crosshair; background: #fff; box-shadow: 0 0 0 2px #2d313d; }
+  #strip { grid-column: 1 / 4; display: flex; gap: 12px; padding: 8px 10px; background: #1d2029; border-top: 2px solid #2d313d; overflow-x: auto; max-height: 250px; }
+  #cells { display: grid; gap: 3px; }
+  .cell { border: 2px solid #3a3f4e; cursor: pointer; image-rendering: pixelated; background: repeating-conic-gradient(#3a3f4e 0 25%, #2c303b 0 50%) 50% / 12px 12px; display: block; }
+  .cell.sel { border-color: #ffd34d; }
+  #preview { image-rendering: pixelated; background: #8da0b8; border: 2px solid #3a3f4e; }
+  #status { color: #8892a0; min-height: 1.3em; }
+  #tip { color: #8892a0; font-size: 12px; line-height: 1.5; }
+  kbd { background: #2a2d36; border: 1px solid #4a4f5e; border-radius: 3px; padding: 0 4px; }
+  label { display: flex; gap: 5px; align-items: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>STICKGO SPRITE EDITOR</h1>
+  <button id="openBtn">OPEN SHEET...</button>
+  <select id="gameSel" title="Needs the page served over http (see the tip on the right)"><option value="">game sheets...</option></select>
+  <button id="newBtn">NEW SHEET</button>
+  <button id="saveBtn">SAVE</button>
+  <button id="dlBtn">DOWNLOAD PNG</button>
+  <button id="undoBtn">UNDO</button>
+  <button id="redoBtn">REDO</button>
+  <span id="fileName" style="color:#ffd34d"></span>
+  <span id="status"></span>
+  <input type="file" id="fileIn" accept="image/png" hidden>
+</header>
+
+<aside class="panel">
+  <h2>TOOLS</h2>
+  <div id="tools" class="row">
+    <button data-tool="pen" title="B">PEN</button>
+    <button data-tool="erase" title="E">ERASE</button>
+    <button data-tool="fill" title="G">FILL</button>
+    <button data-tool="pick" title="I (or Alt+click)">PICK</button>
+    <button data-tool="line" title="L">LINE</button>
+    <button data-tool="rect" title="R">RECT</button>
+  </div>
+  <div class="row"><label>SIZE <input type="number" id="size" min="1" max="8" value="1"></label></div>
+  <h2>COLOR</h2>
+  <div class="row"><input type="color" id="color" value="#fbf236"><button id="addColor">+ ADD</button></div>
+  <div id="palette"></div>
+  <h2>FRAME</h2>
+  <div class="row">
+    <button id="clearF">CLEAR</button>
+    <button id="flipF">FLIP</button>
+    <button id="copyF">COPY</button>
+    <button id="pasteF">PASTE</button>
+  </div>
+  <div class="row">
+    <button data-nudge="-1,0">&larr;</button><button data-nudge="1,0">&rarr;</button>
+    <button data-nudge="0,-1">&uarr;</button><button data-nudge="0,1">&darr;</button>
+    <span style="color:#8892a0">move</span>
+  </div>
+  <div class="row"><button id="dupNext">COPY TO NEXT</button></div>
+  <h2>VIEW</h2>
+  <div class="row">
+    <label>ZOOM <input type="number" id="zoom" min="2" max="24" value="8"></label>
+  </div>
+  <div class="row">
+    <label><input type="checkbox" id="grid" checked> GRID</label>
+    <label><input type="checkbox" id="onion" checked> ONION</label>
+    <label><input type="checkbox" id="feet" checked> GROUND</label>
+  </div>
+</aside>
+
+<main><canvas id="view"></canvas></main>
+
+<aside class="panel">
+  <h2>ANIMATION</h2>
+  <canvas id="preview" width="256" height="128"></canvas>
+  <div class="row" style="margin-top:6px">
+    <button id="play">PAUSE</button>
+    <label>FPS <input type="number" id="fps" min="1" max="60" value="10"></label>
+  </div>
+  <div class="row">
+    <label>ROW <input type="number" id="pRow" min="0" value="0"></label>
+    <label>FROM <input type="number" id="pFrom" min="0" value="0"></label>
+    <label>TO <input type="number" id="pTo" min="0" value="3"></label>
+  </div>
+  <h2>SHEET</h2>
+  <div class="row">
+    <label>FRAME W <input type="number" id="fw" min="8" max="512" value="128"></label>
+    <label>FRAME H <input type="number" id="fh" min="8" max="512" value="64"></label>
+  </div>
+  <div class="row">
+    <label>COLUMNS <input type="number" id="cols" min="1" max="64" value="8"></label>
+    <label>ROWS <input type="number" id="rows" min="1" max="32" value="5"></label>
+  </div>
+  <button id="resizeBtn">APPLY SIZE</button>
+  <h2>HOW TO USE</h2>
+  <div id="tip">
+    Open a sheet from <b>pictures/</b> (<code>foe_*.png</code> or <code>hero_*.png</code>), paint, then <b>SAVE</b> back over the same file and reload the game.<br><br>
+    <kbd>B</kbd> pen <kbd>E</kbd> erase <kbd>G</kbd> fill <kbd>I</kbd> pick <kbd>L</kbd> line <kbd>R</kbd> rect<br>
+    <kbd>&larr;</kbd><kbd>&rarr;</kbd> previous / next frame<br>
+    <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd> undo / redo<br>
+    <kbd>Space</kbd> play / pause<br>
+    <kbd>Alt</kbd>+click picks a colour<br><br>
+    <b>Enemy sheets:</b> 8 frames wide, rows = idle (4), walk (8), attack (6), hit (2), death (6). Feet go on the green ground line; the figure faces right.<br>
+    <b>Hero sheets:</b> one row of frames.<br><br>
+    Game sheets in the list need the page served over http: run <code>python -m http.server</code> in the project folder and open <code>localhost:8000/editor.html</code>. Otherwise use OPEN SHEET.
+  </div>
+</aside>
+
+<section id="strip">
+  <div id="cells"></div>
+</section>
+
+<script>
+"use strict";
+// --- State -------------------------------------------------------------------------------
+const GAME_SHEETS = ["foe_grunt", "foe_ninja", "foe_guard", "foe_brute", "foe_archer", "foe_bomber", "foe_ghost", "foe_boss",
+  "hero_idle", "hero_run", "hero_jump", "hero_jump_peak", "hero_fall", "hero_dash", "hero_attack1", "hero_attack2", "hero_attack3",
+  "hero_skill1", "hero_skill2", "hero_skill3", "hero_start_skill3", "hero_hit1", "hero_hit3"];
+const $ = (id) => document.getElementById(id);
+const sheet = document.createElement("canvas");          // the real pixels
+const sctx = sheet.getContext("2d", { willReadFrequently: true });
+const view = $("view"), vctx = view.getContext("2d");
+let fw = 128, fh = 64, cols = 8, rows = 5;
+let pix = null;               // ImageData of the whole sheet
+let cur = { c: 0, r: 0 };     // the frame being edited
+let tool = "pen", color = [251, 242, 54, 255], zoom = 8;
+let undoStack = [], redoStack = [];
+let fileHandle = null, fileName = "sheet.png";
+let clipboard = null;
+let drag = null;              // { tool, x0, y0, x1, y1 } while drawing a line or rectangle
+let painting = false, lastPt = null;
+
+const PALETTE = ["#fbf236", "#d0c817", "#000000", "#ffffff", "#e84848", "#ac2828", "#4e5aa8", "#2e3670", "#96a2b2", "#646c80",
+  "#f08c32", "#b45f19", "#54ae54", "#347a3a", "#dab048", "#a27a2a", "#96daff", "#64aadc", "#ac3eca", "#70208e",
+  "#6e4a28", "#d1d8e4", "#e0c8ff"].filter((c) => /^#[0-9a-f]{6}$/i.test(c));
+
+function status(msg) { $("status").textContent = msg || ""; }
+
+// --- Sheet loading / saving ----------------------------------------------------------------
+function setSheet(img, name, handle) {
+  sheet.width = img.width;
+  sheet.height = img.height;
+  sctx.clearRect(0, 0, sheet.width, sheet.height);
+  sctx.drawImage(img, 0, 0);
+  fileHandle = handle || null;
+  fileName = name;
+  // Guess the frame size: game sheets use 128x64 frames
+  fh = Math.min(64, img.height);
+  fw = img.height >= 64 && img.width % 128 === 0 ? 128 : Math.min(64, img.width);
+  syncGrid();
+  cur = { c: 0, r: 0 };
+  undoStack = []; redoStack = [];
+  refreshAll();
+  status("opened " + name + " (" + cols + " x " + rows + " frames of " + fw + "x" + fh + ")");
+}
+
+function syncGrid() {
+  cols = Math.max(1, Math.floor(sheet.width / fw));
+  rows = Math.max(1, Math.floor(sheet.height / fh));
+  $("fw").value = fw; $("fh").value = fh; $("cols").value = cols; $("rows").value = rows;
+  pix = sctx.getImageData(0, 0, sheet.width, sheet.height);
+  $("pRow").max = rows - 1;
+  $("pTo").value = Math.min(cols - 1, Number($("pTo").value));
+  $("fileName").textContent = fileName;
+}
+
+function loadFromBlob(blob, name, handle) {
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => { setSheet(img, name, handle); URL.revokeObjectURL(url); };
+  img.onerror = () => status("couldn't read that image");
+  img.src = url;
+}
+
+$("openBtn").onclick = async () => {
+  if (window.showOpenFilePicker) {
+    try {
+      const [h] = await showOpenFilePicker({ types: [{ description: "PNG sheet", accept: { "image/png": [".png"] } }] });
+      loadFromBlob(await h.getFile(), h.name, h);
+    } catch (e) { /* cancelled */ }
+  } else $("fileIn").click();
+};
+$("fileIn").onchange = (e) => { const f = e.target.files[0]; if (f) loadFromBlob(f, f.name, null); };
+document.addEventListener("dragover", (e) => e.preventDefault());
+document.addEventListener("drop", (e) => {
+  e.preventDefault();
+  const f = e.dataTransfer.files[0];
+  if (f && f.type === "image/png") loadFromBlob(f, f.name, null);
+});
+
+for (const n of GAME_SHEETS) $("gameSel").add(new Option(n, n));
+$("gameSel").onchange = async () => {
+  const n = $("gameSel").value;
+  if (!n) return;
+  if (location.protocol === "file:") { status("serve the page over http to use this list - or use OPEN SHEET"); $("gameSel").value = ""; return; }
+  try {
+    const res = await fetch("pictures/" + n + ".png");
+    loadFromBlob(await res.blob(), n + ".png", null);
+  } catch (e) { status("couldn't load pictures/" + n + ".png"); }
+};
+
+$("newBtn").onclick = () => {
+  sheet.width = fw * cols; sheet.height = fh * rows;
+  sctx.clearRect(0, 0, sheet.width, sheet.height);
+  fileHandle = null; fileName = "new_sheet.png";
+  syncGrid(); cur = { c: 0, r: 0 }; undoStack = []; redoStack = [];
+  refreshAll(); status("new empty sheet");
+};
+
+function blobOfSheet() { return new Promise((res) => sheet.toBlob(res, "image/png")); }
+
+$("saveBtn").onclick = async () => {
+  commit();
+  if (fileHandle) {
+    try {
+      const w = await fileHandle.createWritable();
+      await w.write(await blobOfSheet());
+      await w.close();
+      status("saved " + fileName);
+      return;
+    } catch (e) { status("couldn't write the file - downloading instead"); }
+  } else if (window.showSaveFilePicker) {
+    try {
+      const h = await showSaveFilePicker({ suggestedName: fileName, types: [{ description: "PNG", accept: { "image/png": [".png"] } }] });
+      const w = await h.createWritable();
+      await w.write(await blobOfSheet());
+      await w.close();
+      fileHandle = h; fileName = h.name; $("fileName").textContent = fileName;
+      status("saved " + fileName);
+      return;
+    } catch (e) { return; }
+  }
+  download();
+};
+$("dlBtn").onclick = () => { commit(); download(); };
+async function download() {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(await blobOfSheet());
+  a.download = fileName;
+  a.click();
+  status("downloaded " + fileName + " - put it in the pictures folder");
+}
+
+// --- Pixels --------------------------------------------------------------------------------
+function frameOrigin() { return { x: cur.c * fw, y: cur.r * fh }; }
+function inFrame(x, y) { return x >= 0 && y >= 0 && x < fw && y < fh; }
+function getPx(x, y) {
+  const o = frameOrigin(), i = ((o.y + y) * sheet.width + o.x + x) * 4;
+  return [pix.data[i], pix.data[i + 1], pix.data[i + 2], pix.data[i + 3]];
+}
+function setPx(x, y, rgba) {
+  if (!inFrame(x, y)) return;
+  const o = frameOrigin(), i = ((o.y + y) * sheet.width + o.x + x) * 4;
+  pix.data[i] = rgba[0]; pix.data[i + 1] = rgba[1]; pix.data[i + 2] = rgba[2]; pix.data[i + 3] = rgba[3];
+}
+function commit() { sctx.putImageData(pix, 0, 0); }
+function snapshot() {
+  undoStack.push(pix.data.slice());
+  if (undoStack.length > 60) undoStack.shift();
+  redoStack = [];
+}
+function restore(data) { pix.data.set(data); commit(); refreshAll(); }
+$("undoBtn").onclick = undo; $("redoBtn").onclick = redo;
+function undo() { if (!undoStack.length) return; redoStack.push(pix.data.slice()); restore(undoStack.pop()); }
+function redo() { if (!redoStack.length) return; undoStack.push(pix.data.slice()); restore(redoStack.pop()); }
+
+function brush(x, y, rgba) {
+  const n = Number($("size").value) || 1, h = Math.floor(n / 2);
+  for (let dy = 0; dy < n; dy++) for (let dx = 0; dx < n; dx++) setPx(x - h + dx, y - h + dy, rgba);
+}
+function plotLine(x0, y0, x1, y1, fn) {   // Bresenham
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx + dy;
+  for (;;) {
+    fn(x0, y0);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+}
+function fillFrom(x, y, rgba) {
+  if (!inFrame(x, y)) return;
+  const target = getPx(x, y);
+  if (target.every((v, i) => v === rgba[i])) return;
+  const same = (p) => p.every((v, i) => v === target[i]);
+  const stack = [[x, y]];
+  while (stack.length) {
+    const [px, py] = stack.pop();
+    if (!inFrame(px, py) || !same(getPx(px, py))) continue;
+    setPx(px, py, rgba);
+    stack.push([px + 1, py], [px - 1, py], [px, py + 1], [px, py - 1]);
+  }
+}
+
+// --- Drawing the big view ---------------------------------------------------------------------
+function refreshView() {
+  zoom = Math.max(2, Math.min(24, Number($("zoom").value) || 8));
+  view.width = fw * zoom; view.height = fh * zoom;
+  const g = vctx;
+  g.imageSmoothingEnabled = false;
+  // checkerboard so transparent pixels are visible
+  const sq = Math.max(4, zoom);
+  for (let y = 0; y < view.height; y += sq) for (let x = 0; x < view.width; x += sq) {
+    g.fillStyle = ((x / sq + y / sq) & 1) ? "#9aa3b4" : "#b8c0ce";
+    g.fillRect(x, y, sq, sq);
+  }
+  const o = frameOrigin();
+  if ($("onion").checked) {   // the previous frame, faintly
+    const prev = cur.c > 0 ? { c: cur.c - 1, r: cur.r } : null;
+    if (prev) { g.globalAlpha = 0.3; g.drawImage(sheet, prev.c * fw, prev.r * fh, fw, fh, 0, 0, view.width, view.height); g.globalAlpha = 1; }
+  }
+  g.drawImage(sheet, o.x, o.y, fw, fh, 0, 0, view.width, view.height);
+  if ($("grid").checked && zoom >= 6) {
+    g.strokeStyle = "rgba(0,0,0,0.12)"; g.lineWidth = 1;
+    g.beginPath();
+    for (let x = 0; x <= fw; x++) { g.moveTo(x * zoom + 0.5, 0); g.lineTo(x * zoom + 0.5, view.height); }
+    for (let y = 0; y <= fh; y++) { g.moveTo(0, y * zoom + 0.5); g.lineTo(view.width, y * zoom + 0.5); }
+    g.stroke();
+  }
+  if ($("feet").checked) {   // where the game puts the ground and the centre line
+    g.strokeStyle = "rgba(40,200,80,0.9)"; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(0, (fh - 1) * zoom + zoom); g.lineTo(view.width, (fh - 1) * zoom + zoom); g.stroke();
+    g.strokeStyle = "rgba(40,120,220,0.5)";
+    g.beginPath(); g.moveTo(fw / 2 * zoom, 0); g.lineTo(fw / 2 * zoom, view.height); g.stroke();
+  }
+  if (drag) {   // preview of a line or rectangle being dragged out
+    g.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${tool === "erase" ? 0.4 : 0.8})`;
+    const mark = (x, y) => g.fillRect(x * zoom, y * zoom, zoom, zoom);
+    shapePoints(drag).forEach(([x, y]) => mark(x, y));
+  }
+}
+
+function shapePoints(d) {
+  const pts = [];
+  if (d.tool === "line") plotLine(d.x0, d.y0, d.x1, d.y1, (x, y) => pts.push([x, y]));
+  else {
+    const x0 = Math.min(d.x0, d.x1), x1 = Math.max(d.x0, d.x1), y0 = Math.min(d.y0, d.y1), y1 = Math.max(d.y0, d.y1);
+    for (let x = x0; x <= x1; x++) { pts.push([x, y0], [x, y1]); }
+    for (let y = y0; y <= y1; y++) { pts.push([x0, y], [x1, y]); }
+  }
+  return pts;
+}
+
+// --- The frame grid at the bottom --------------------------------------------------------------
+function refreshCells() {
+  const box = $("cells");
+  box.innerHTML = "";
+  box.style.gridTemplateColumns = `repeat(${cols}, auto)`;
+  const tw = Math.max(32, Math.min(96, Math.floor(1000 / cols))), th = Math.round(tw * fh / fw);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const cv = document.createElement("canvas");
+    cv.width = tw; cv.height = th;
+    cv.className = "cell" + (c === cur.c && r === cur.r ? " sel" : "");
+    cv.title = `row ${r}, frame ${c}`;
+    const g = cv.getContext("2d");
+    g.imageSmoothingEnabled = false;
+    g.drawImage(sheet, c * fw, r * fh, fw, fh, 0, 0, tw, th);
+    cv.onclick = () => { cur = { c, r }; refreshAll(); };
+    box.appendChild(cv);
+  }
+}
+
+function refreshAll() { refreshView(); refreshCells(); }
+
+// --- Animation preview ---------------------------------------------------------------------------
+let playing = true, animT = 0, lastTick = performance.now();
+const pc = $("preview"), pctx = pc.getContext("2d");
+function drawPreview(now) {
+  const dt = (now - lastTick) / 1000;
+  lastTick = now;
+  const from = Math.max(0, Math.min(cols - 1, Number($("pFrom").value) || 0));
+  const to = Math.max(from, Math.min(cols - 1, Number($("pTo").value) || 0));
+  const row = Math.max(0, Math.min(rows - 1, Number($("pRow").value) || 0));
+  if (playing) animT += dt * (Number($("fps").value) || 10);
+  const n = to - from + 1, f = from + (Math.floor(animT) % n);
+  pctx.imageSmoothingEnabled = false;
+  pctx.clearRect(0, 0, pc.width, pc.height);
+  pctx.drawImage(sheet, f * fw, row * fh, fw, fh, 0, 0, pc.width, pc.height);
+  requestAnimationFrame(drawPreview);
+}
+$("play").onclick = () => { playing = !playing; $("play").textContent = playing ? "PAUSE" : "PLAY"; };
+
+// --- Mouse -------------------------------------------------------------------------------------
+function cellAt(e) {
+  const r = view.getBoundingClientRect();
+  return [Math.floor((e.clientX - r.left) / (r.width / fw)), Math.floor((e.clientY - r.top) / (r.height / fh))];
+}
+const eraser = [0, 0, 0, 0];
+view.addEventListener("mousedown", (e) => {
+  e.preventDefault();
+  const [x, y] = cellAt(e);
+  if (e.altKey || tool === "pick") {
+    if (inFrame(x, y)) setColor(getPx(x, y));
+    return;
+  }
+  snapshot();
+  const rgba = tool === "erase" || e.button === 2 ? eraser : color;
+  if (tool === "fill") { fillFrom(x, y, rgba); commit(); refreshAll(); return; }
+  if (tool === "line" || tool === "rect") { drag = { tool, x0: x, y0: y, x1: x, y1: y, rgba }; refreshView(); return; }
+  painting = true; lastPt = [x, y];
+  brush(x, y, rgba); commit(); refreshView();
+  view._rgba = rgba;
+});
+window.addEventListener("mousemove", (e) => {
+  const [x, y] = cellAt(e);
+  $("status").textContent = inFrame(x, y) ? `x ${x}  y ${y}` : "";
+  if (drag) { drag.x1 = x; drag.y1 = y; refreshView(); }
+  else if (painting) {
+    plotLine(lastPt[0], lastPt[1], x, y, (px, py) => brush(px, py, view._rgba));
+    lastPt = [x, y]; commit(); refreshView();
+  }
+});
+window.addEventListener("mouseup", () => {
+  if (drag) {
+    const rgba = tool === "erase" ? eraser : drag.rgba;
+    shapePoints(drag).forEach(([x, y]) => brush(x, y, rgba));
+    drag = null; commit(); refreshAll();
+  }
+  if (painting) { painting = false; refreshCells(); }
+});
+view.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// --- Tools, colours, frame actions -----------------------------------------------------------------
+document.querySelectorAll("[data-tool]").forEach((b) => b.onclick = () => setTool(b.dataset.tool));
+function setTool(t) {
+  tool = t;
+  document.querySelectorAll("[data-tool]").forEach((b) => b.classList.toggle("active", b.dataset.tool === t));
+}
+const hex = (c) => "#" + c.slice(0, 3).map((v) => v.toString(16).padStart(2, "0")).join("");
+function setColor(rgba) {
+  color = rgba;
+  $("color").value = hex(rgba);
+  document.querySelectorAll("#palette div").forEach((d) => d.classList.toggle("sel", d.dataset.hex === hex(rgba)));
+  if (tool === "erase") setTool("pen");
+}
+function addSwatch(h) {
+  const d = document.createElement("div");
+  d.style.background = h; d.dataset.hex = h; d.title = h;
+  d.onclick = () => setColor([parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16), 255]);
+  $("palette").appendChild(d);
+}
+const clearSw = document.createElement("div");
+clearSw.className = "clear"; clearSw.title = "transparent (erase)";
+clearSw.onclick = () => setTool("erase");
+$("palette").appendChild(clearSw);
+PALETTE.forEach(addSwatch);
+$("color").oninput = (e) => { const h = e.target.value; setColor([parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16), 255]); };
+$("addColor").onclick = () => { if (!document.querySelector(`#palette [data-hex="${hex(color)}"]`)) addSwatch(hex(color)); };
+
+function frameData() { const o = frameOrigin(); return sctx.getImageData(o.x, o.y, fw, fh); }
+function putFrame(data) { const o = frameOrigin(); sctx.putImageData(data, o.x, o.y); pix = sctx.getImageData(0, 0, sheet.width, sheet.height); refreshAll(); }
+$("clearF").onclick = () => { snapshot(); const o = frameOrigin(); sctx.clearRect(o.x, o.y, fw, fh); pix = sctx.getImageData(0, 0, sheet.width, sheet.height); refreshAll(); };
+$("flipF").onclick = () => {
+  snapshot(); commit();
+  const src = frameData(), out = new ImageData(fw, fh);
+  for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++)
+    for (let k = 0; k < 4; k++) out.data[(y * fw + x) * 4 + k] = src.data[(y * fw + (fw - 1 - x)) * 4 + k];
+  putFrame(out);
+};
+$("copyF").onclick = () => { commit(); clipboard = frameData(); status("frame copied"); };
+$("pasteF").onclick = () => { if (clipboard && clipboard.width === fw && clipboard.height === fh) { snapshot(); putFrame(clipboard); } };
+$("dupNext").onclick = () => {
+  if (cur.c + 1 >= cols) return;
+  snapshot(); commit();
+  const data = frameData(); cur.c++; putFrame(data);
+};
+document.querySelectorAll("[data-nudge]").forEach((b) => b.onclick = () => {
+  const [dx, dy] = b.dataset.nudge.split(",").map(Number);
+  snapshot(); commit();
+  const src = frameData(), out = new ImageData(fw, fh);
+  for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
+    const sx = x - dx, sy = y - dy;
+    if (sx < 0 || sy < 0 || sx >= fw || sy >= fh) continue;
+    for (let k = 0; k < 4; k++) out.data[(y * fw + x) * 4 + k] = src.data[(sy * fw + sx) * 4 + k];
+  }
+  putFrame(out);
+});
+
+$("resizeBtn").onclick = () => {
+  commit();
+  const old = sctx.getImageData(0, 0, sheet.width, sheet.height);
+  const oldW = sheet.width, oldH = sheet.height;
+  fw = Math.max(8, Number($("fw").value)); fh = Math.max(8, Number($("fh").value));
+  cols = Math.max(1, Number($("cols").value)); rows = Math.max(1, Number($("rows").value));
+  const tmp = document.createElement("canvas");
+  tmp.width = oldW; tmp.height = oldH;
+  tmp.getContext("2d").putImageData(old, 0, 0);
+  sheet.width = fw * cols; sheet.height = fh * rows;
+  sctx.clearRect(0, 0, sheet.width, sheet.height);
+  sctx.drawImage(tmp, 0, 0);
+  syncGrid();
+  cur = { c: Math.min(cur.c, cols - 1), r: Math.min(cur.r, rows - 1) };
+  undoStack = []; redoStack = [];
+  refreshAll(); status("sheet is now " + sheet.width + "x" + sheet.height);
+};
+["zoom", "grid", "onion", "feet"].forEach((id) => $(id).addEventListener("input", refreshView));
+
+// --- Keyboard ------------------------------------------------------------------------------------
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT") return;
+  const k = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && k === "y") { e.preventDefault(); redo(); return; }
+  if (e.ctrlKey || e.metaKey) return;
+  const tools = { b: "pen", e: "erase", g: "fill", i: "pick", l: "line", r: "rect" };
+  if (tools[k]) setTool(tools[k]);
+  if (k === "arrowright" && cur.c + 1 < cols) { cur.c++; refreshAll(); e.preventDefault(); }
+  if (k === "arrowleft" && cur.c > 0) { cur.c--; refreshAll(); e.preventDefault(); }
+  if (k === "arrowdown" && cur.r + 1 < rows) { cur.r++; refreshAll(); e.preventDefault(); }
+  if (k === "arrowup" && cur.r > 0) { cur.r--; refreshAll(); e.preventDefault(); }
+  if (k === " ") { e.preventDefault(); $("play").click(); }
+});
+
+// --- Start: a blank enemy-style sheet, or open pictures/foe_grunt.png if served over http ------------
+setTool("pen");
+setColor(color);
+sheet.width = fw * cols; sheet.height = fh * rows;
+syncGrid();
+refreshAll();
+requestAnimationFrame(drawPreview);
+if (location.protocol !== "file:") {
+  $("gameSel").value = "foe_grunt";
+  $("gameSel").onchange();
+} else status("open a sheet from the pictures folder, or start painting on the blank one");
+</script>
+</body>
+</html>
