@@ -635,6 +635,7 @@ function reset() {
   sparks = [];
   bossBanner = null;
   wave = 0;
+  bgFrom = bgTo = 0; bgFade = 1;
   waveBanner = 0;
   shakeTime = 0;
   clouds = Array.from({ length: 4 }, () => ({
@@ -1586,6 +1587,7 @@ function inputDir() {
 
 function startWave(n) {
   wave = n;
+  setMapForWave(n);
   waveBanner = 2.2;
   bossDue = n % 5 === 0;
   waveToSpawn = waveTotal = Math.min(30, 4 + n * 2) + (bossDue ? 1 : 0);
@@ -2085,6 +2087,7 @@ let colors;
 let night = 0;
 
 function nightLevel(s) {
+  return 1;   // the forest backdrop is a dusk scene, so the light-on-dark palette is always on
   if (settings.comfort) return 1;   // Comfort Mode keeps the screen dark instead of bright white
   const p = s % 1000;
   return Math.max(0, Math.min(1, (p - 650) / 50, (1000 - p) / 50));
@@ -3089,6 +3092,37 @@ function drawCloud(c) {
   ctx.fillRect(x + 3, y, 42, PX);
 }
 
+// Pixel backdrops, each a 3:1 slice of its picture scrolling slowly behind the action.
+// Every other copy is mirrored so the strip repeats without a seam.
+// The map changes every 3 waves (forest, city, forest...) with a short crossfade.
+const MAPS = ["pictures/gameplay_bg.jpg", "pictures/gameplay_bg_city.png"].map((src) => { const i = new Image(); i.src = src; return i; });
+const MAP_WAVES = 3, MAP_FADE = 1.5;
+let bgFrom = 0, bgTo = 0, bgFade = 1;
+function setMapForWave(n) {
+  const idx = Math.floor((n - 1) / MAP_WAVES) % MAPS.length;
+  if (idx === bgTo) return;
+  bgFrom = bgTo; bgTo = idx; bgFade = 0;
+}
+function drawMap(img) {
+  if (!img.complete || !img.naturalWidth) return;
+  const sh = img.naturalWidth / 3, sy = Math.round(img.naturalHeight * 0.17);   // keep the sunset band and the skyline / tree line
+  const shift = Math.round(((distance || 0) * 0.06) % (W * 2));
+  for (let tile = 0; tile < 3; tile++) {
+    const x = tile * W - shift;
+    if (x > W || x + W < 0) continue;
+    if (tile % 2) { ctx.save(); ctx.translate(x + W, 0); ctx.scale(-1, 1); ctx.drawImage(img, 0, sy, img.naturalWidth, sh, 0, 0, W, H); ctx.restore(); }
+    else ctx.drawImage(img, 0, sy, img.naturalWidth, sh, x, 0, W, H);
+  }
+}
+function drawBackdrop() {
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  if (bgFade < 1) drawMap(MAPS[bgFrom]);
+  ctx.globalAlpha = Math.min(1, bgFade);
+  drawMap(MAPS[bgTo]);
+  ctx.restore();
+}
+
 function pad5(n) { return String(n).padStart(5, "0"); }
 
 function draw() {
@@ -3096,16 +3130,7 @@ function draw() {
   ctx.fillStyle = colors.sky;
   ctx.fillRect(0, 0, W, H);
 
-  // Moon and stars fade in at night
-  if (night > 0) {
-    ctx.globalAlpha = night;
-    ctx.fillStyle = colors.ink;
-    for (const s of STARS) ctx.fillRect(snap(s.x), snap(s.y), PX, PX);
-    pixEllipse(W * 0.72, 55, 15, 15);
-    ctx.fillStyle = colors.sky;
-    pixEllipse(W * 0.72 + 9, 49, 12, 12);
-    ctx.globalAlpha = 1;
-  }
+  drawBackdrop();
 
   ctx.save();
   if (shakeTime > 0) {
@@ -3113,15 +3138,12 @@ function draw() {
     ctx.translate((Math.random() - 0.5) * m, (Math.random() - 0.5) * m);
   }
 
-  drawCityLayer(CITY_FAR);
-  drawCityLayer(CITY_NEAR);
-  clouds.forEach(drawCloud);
 
   // Ground
-  ctx.fillStyle = colors.ink;
-  ctx.fillRect(0, GROUND_Y, W, PX);
+  ctx.fillStyle = "rgba(10, 8, 18, 0.78)";
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
   ctx.fillStyle = colors.inkBack;
-  ctx.fillRect(0, GROUND_Y + PX, W, PX);
+  ctx.fillRect(0, GROUND_Y, W, PX);
   // Comfort Mode draws fewer, fainter ground specks: they're a busy pattern at high speed
   if (settings.comfort) ctx.fillStyle = colors.inkBack;
   const specks = settings.comfort ? 14 : groundBits.length;
@@ -3280,6 +3302,7 @@ function loop(time) {
     c.t += dt;
     c.cx += c.fling * Math.max(0, 150 * (1 - c.t * 3)) * dt;   // slides a little from the blow
   }
+  if (bgFade < 1) bgFade = Math.min(1, bgFade + dt / MAP_FADE);
   if (shakeTime > 0) shakeTime -= dt;
   if (flashTime > 0) flashTime -= dt;
   if (waveBanner > 0 && state === "running") waveBanner -= dt;
