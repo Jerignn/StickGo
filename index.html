@@ -643,7 +643,7 @@ function refreshSettingsLabels() {
     `DIFFICULTY: ${DIFFICULTIES[settings.difficulty].label}${nextRun}`;
   document.getElementById("btnSizeBtn").textContent =
     `BUTTON SIZE: ${BUTTON_SIZES[settings.btnSize].label}`;
-  document.getElementById("soundBtn").textContent = `SOUND: ${settings.sound ? "ON" : "OFF"}`;
+  document.getElementById("soundBtn").textContent = `SOUND FX: ${settings.sound ? "ON" : "OFF"}`;
   document.getElementById("musicBtn").textContent = `MUSIC: ${settings.music ? "ON" : "OFF"}`;
   document.getElementById("comfortBtn").textContent = `COMFORT MODE: ${settings.comfort ? "ON" : "OFF"}`;
   document.getElementById("resetHighBtn").textContent =
@@ -860,7 +860,7 @@ function refreshInventory() {
       const card = swordCard(id);
       card.classList.toggle("equipped", equipped);
       const btn = card.querySelector("button");
-      btn.textContent = equipped ? "EQUIPPED" : "EQUIP";
+      btn.textContent = !equipped ? "EQUIP" : id === "starter" ? "EQUIPPED" : "UNEQUIP";
       btn.addEventListener("click", () => equipSkin(id));
       row.appendChild(card);
     }
@@ -869,7 +869,15 @@ function refreshInventory() {
 }
 
 function equipSkin(id) {
-  if (skinState.equipped === id) return;
+  if (skinState.equipped === id) {
+    // Unequipping puts the starter sword back (he always carries one)
+    if (id === "starter") return;
+    skinState.equipped = "starter";
+    saveSkins();
+    refreshInventory();
+    invMessage(`${SWORD_SKINS[id].name} UNEQUIPPED`);
+    return;
+  }
   skinState.equipped = id;
   saveSkins();
   refreshInventory();
@@ -893,6 +901,7 @@ const HATS = {
   halo:     { name: "ANGEL HALO", price: 5000 }
 };
 const SCARVES = {
+  none:   { name: "NO SCARF", price: 0 },
   red:    { name: "RED", price: 0, a: "#e53030", b: "#a31515" },
   blue:   { name: "BLUE", price: 40, a: "#3a7bff", b: "#1f4bb0" },
   green:  { name: "GREEN", price: 40, a: "#3fcf5a", b: "#1f8a35" },
@@ -902,6 +911,7 @@ const SCARVES = {
   rainbow: { name: "RAINBOW", price: 500, rainbow: true }
 };
 const AURAS = {
+  none:   { name: "NO AURA", price: 0 },
   blue:   { name: "BLUE", price: 0, rgb: "70,160,255" },
   red:    { name: "RED", price: 60, rgb: "255,90,70" },
   green:  { name: "GREEN", price: 60, rgb: "80,220,120" },
@@ -920,6 +930,7 @@ const look = Object.assign(
 );
 for (const [group, info] of Object.entries(LOOK_GROUPS)) {   // forget anything that is no longer sold
   look.owned[group] = (look.owned[group] || []).filter((id) => info.items[id]);
+  if (info.items.none && !look.owned[group].includes("none")) look.owned[group].unshift("none");   // "none" is always free
   if (!look.owned[group].length) look.owned[group] = [Object.keys(info.items)[0]];
   if (!look.owned[group].includes(look.equipped[group])) look.equipped[group] = look.owned[group][0];
 }
@@ -1111,6 +1122,7 @@ function refreshLook() {
     tabs.appendChild(tab);
   }
   for (const [id, item] of Object.entries(LOOK_GROUPS[lookTab].items)) {
+    if (id === "none") continue;   // "none" is just the unequipped state, tapped off via UNEQUIP
     const owned = look.owned[lookTab].includes(id);
     const equipped = look.equipped[lookTab] === id;
     const card = document.createElement("div");
@@ -1123,7 +1135,7 @@ function refreshLook() {
     cv.dataset.id = id;
     drawLookIcon(cv, lookTab, id);
     const btn = card.querySelector("button");
-    if (equipped) btn.textContent = "EQUIPPED";
+    if (equipped) btn.textContent = LOOK_GROUPS[lookTab].items.none && id !== "none" ? "UNEQUIP" : "EQUIPPED";
     else if (owned) btn.textContent = "EQUIP";
     else { btn.innerHTML = `<span class="coin"></span>${fmt(item.price)}`; btn.classList.toggle("cant", totalGold < item.price); }
     btn.addEventListener("click", () => lookTap(lookTab, id));
@@ -1142,9 +1154,11 @@ function lookTap(group, id) {
     look.owned[group].push(id);
     sfx.coin();
   }
+  // Tapping the worn hat takes it off
+  if (id !== "none" && LOOK_GROUPS[group].items.none && look.equipped[group] === id) id = "none";
   look.equipped[group] = id;
   saveLook();
-  lookMessage(id === "none" ? "HAT REMOVED" : `${item.name} EQUIPPED`);
+  lookMessage(id === "none" ? `${LOOK_GROUPS[group].label} REMOVED` : `${item.name} EQUIPPED`);
   refreshLook();
 }
 
@@ -1270,7 +1284,7 @@ function scheduleMusicStep(step, t) {
 }
 
 function musicTick() {
-  if (!audio || audio.state !== "running" || !settings.sound || !settings.music || (state !== "running" && state !== "ready" && state !== "countdown")) {
+  if (!audio || audio.state !== "running" || !settings.music || (state !== "running" && state !== "ready" && state !== "countdown")) {
     musicNext = 0;   // restart cleanly from the next beat once it can play again
     return;
   }
@@ -2983,8 +2997,10 @@ function drawHero(pts, down = !!ragdoll) {
   const h = pts.head;
 
   // Rim light (the aura): the same figure, wider and faint, drawn underneath
-  const aura = auraColors();
-  drawFigure(pts, aura.front, aura.back, 8.2, HERO_HEAD + 2.2);
+  if (look.equipped.aura !== "none") {
+    const aura = auraColors();
+    drawFigure(pts, aura.front, aura.back, 8.2, HERO_HEAD + 2.2);
+  }
   drawFigure(pts, colors.hero, colors.heroBack, 4.6, HERO_HEAD);
 
   // Shoes and hands
@@ -2999,7 +3015,7 @@ function drawHero(pts, down = !!ragdoll) {
   const knot = { x: pts.neck.x - 1, y: pts.neck.y + 1 };
   const len = 18 + (speed || 400) * 0.014;
   const scarf = scarfColors();
-  for (const [l, dy, color, ph] of [[len * 1.3, 3, scarf.b, 1.3], [len, 0, scarf.a, 0]]) {
+  for (const [l, dy, color, ph] of look.equipped.scarf === "none" ? [] : [[len * 1.3, 3, scarf.b, 1.3], [len, 0, scarf.a, 0]]) {
     ctx.strokeStyle = color;
     ctx.lineWidth = 4;
     ctx.beginPath();
@@ -3012,8 +3028,10 @@ function drawHero(pts, down = !!ragdoll) {
     }
     ctx.stroke();
   }
-  ctx.fillStyle = scarf.a;
-  ctx.beginPath(); ctx.arc(knot.x, knot.y, 3, 0, Math.PI * 2); ctx.fill();
+  if (look.equipped.scarf !== "none") {
+    ctx.fillStyle = scarf.a;
+    ctx.beginPath(); ctx.arc(knot.x, knot.y, 3, 0, Math.PI * 2); ctx.fill();
+  }
 
   // Face: narrowed glowing eyes under a determined brow (he faces right)
   ctx.strokeStyle = colors.sky;
