@@ -42,9 +42,9 @@ window.STICKGO_ANIMS = {
         "frames": [0, 1, 2]
       },
       "dying": {
-        "sheet": "hit3",
-        "frames": [0, 1, 2],
-        "fps": 6
+        "sheet": "death",
+        "frames": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "fps": 9
       }
     },
     "actions": {

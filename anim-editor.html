@@ -88,7 +88,7 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const DATA = JSON.parse(JSON.stringify(window.STICKGO_ANIMS));
-const HERO_SHEETS = ["idle", "run", "jump", "jump_peak", "fall", "dash", "attack1", "attack2", "attack3", "skill1", "skill2", "skill3", "start_skill3", "hit1", "hit3"];
+const HERO_SHEETS = ["idle", "run", "jump", "jump_peak", "fall", "dash", "attack1", "attack2", "attack3", "skill1", "skill2", "skill3", "start_skill3", "hit1", "hit3", "death"];
 const FW = 128, FH = 64, SC = 1.5;   // frame size, and how big the hero is drawn in the game
 const HEADER = `// StickGo animation data: which sprite frames play, how fast, and when attacks hit.
 // Edit it with anim-editor.html (it saves this file) or by hand. index.html reads it at start-up.

@@ -1437,7 +1437,7 @@ function dropGold(x, y, count, popupY = y - 26) {
 
 // --- The hero: yellow stickman sprite sheets (128x64 frames, facing right) ---
 const SHEET_FRAMES = { idle: 4, run: 10, jump: 3, jump_peak: 3, fall: 4, dash: 11,
-  attack1: 10, attack2: 8, attack3: 10, skill1: 9, skill2: 19, skill3: 25, start_skill3: 3, hit1: 3, hit3: 3 };
+  attack1: 10, attack2: 8, attack3: 10, skill1: 9, skill2: 19, skill3: 25, start_skill3: 3, hit1: 3, hit3: 3, death: 10 };
 const SHEETS = {};
 for (const name of Object.keys(SHEET_FRAMES)) {
   const img = new Image();
@@ -2708,7 +2708,7 @@ function drawPortal(p) {
 function heroSprite() {
   const now = performance.now() / 1000;
   const rate = (st) => now * (st.fps || 10);
-  if (state === "dying") { const st = HS.dying; const f = stateFrame(st, dyingT * st.fps); f.rot = Math.min(1.5, dyingT * 3.2); return f; }
+  if (state === "dying") { const st = HS.dying; return stateFrame(st, dyingT * st.fps); }
   if (player.stun > 0) return stateFrame(HS.hurt, (0.3 - player.stun) / 0.3 * HS.hurt.frames.length);
   if (player.act) return actFrame(player.act, player.actT);
   if (player.dash > 0) return stateFrame(HS.dash, (1 - player.dash / DASH_TIME) * HS.dash.frames.length);
