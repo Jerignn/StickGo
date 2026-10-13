@@ -3,8 +3,8 @@
     package="com.stickgo.game">
 
     <application
-        android:label="StickGo"
-        android:icon="@drawable/ic_launcher"
+        android:label="Stick Fight"
+        android:icon="@mipmap/ic_launcher"
         android:hardwareAccelerated="true"
         android:allowBackup="true">
 

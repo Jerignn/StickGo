@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StickGo</title>
+<title>Stick Fight</title>
 <style>
   /* --sky and --ink are updated by the game for the day/night cycle */
   :root { --btn-size: 18vh; --gw: min(100vw, 300vh);   /* --gw: the game's on-screen width */ --sky: #f7f7f7; --ink: #535353; }
@@ -629,6 +629,7 @@ let state = "ready";         // "ready" | "countdown" | "running" | "paused" | "
 let speed, score, distance, obstacles, clouds, groundBits, spawnTimer, lastTime;
 let runDiff = settings.difficulty;  // difficulty of the current run; settings changes apply next run
 let flashTime = 0;
+let potions = [];            // health / mana potions dropped by enemies, waiting to be picked up
 let coins = [];              // gold coins dropped by enemies, waiting to be picked up
 let corpses = [];            // slain enemies lying where they fell (they play their death animation)
 let runGold = 0;
@@ -714,6 +715,7 @@ function reset() {
   player.inv = 0;
   player.lungeV = 0;
   coins = [];
+  potions = [];
   corpses = [];
   runGold = 0;
   popups = [];
@@ -1586,8 +1588,10 @@ const SKILLS = ANIM.hero.skills.map((id) => prep(ANIM.hero.actions[id]));
 // at both edges. Enemies each have a trick of their own; every wave 5 a boss shows up.
 const PLAYER_SPEED = 230;      // px/s
 const PLAYER_MAX_HP = 100;
-// Mana: skills 1, 2 and 3 cost mana instead of having cooldowns. It refills over time and each kill gives some back.
-const MANA_MAX = 100, MANA_REGEN = 6, MANA_PER_KILL = 6;
+// Mana: skills 1, 2 and 3 cost mana instead of having cooldowns. It does not refill by itself: enemies sometimes drop
+// health and mana potions (POTION_CHANCE), which restore a little when he walks over them.
+const POTION_CHANCE = 0.16, POTION_HEAL = 15, POTION_MANA = 20, POTION_LIFE = 9;
+const MANA_MAX = 100;
 const SKILL_MANA = [25, 40, 100];
 const HURT_TIME = 0.9;         // s he can't be hurt again after a hit
 const DIFF_MUL = { easy: 0.8, normal: 1, hard: 1.25 };   // enemy speed and spawn rate
@@ -1861,7 +1865,6 @@ function hurtFoe(o, dmg, push, stagger = true) {
     o.fling = Math.sign(push) || player.facing;
     killEnemy(o, randInt(d.gold[0], d.gold[1]));
     kills++;
-    player.mana = Math.min(MANA_MAX, player.mana + MANA_PER_KILL);
     score += d.pts;
     return;
   }
@@ -1907,11 +1910,11 @@ function actionTick(dt) {
 }
 
 // The cooldown clock on a skill button: shaded sweep plus the seconds left; a pop when it's ready again
-function showCooldown(btn, left, max) {
+function showCooldown(btn, left, max, whole = false) {
   const cooling = left > 0;
   if (cooling) {
     btn.style.setProperty("--cd", (left / max).toFixed(3));
-    btn.lastChild.textContent = left < 10 ? left.toFixed(1) : String(Math.ceil(left));
+    btn.lastChild.textContent = whole || left >= 10 ? String(Math.ceil(left)) : left.toFixed(1);
   }
   if (btn.classList.contains("cooling") === cooling) return;
   btn.classList.toggle("cooling", cooling);
@@ -1926,7 +1929,6 @@ function update(dt) {
   player.stun = Math.max(0, player.stun - dt);
   player.recover = Math.max(0, player.recover - dt);
   player.dashCooldown = Math.max(0, player.dashCooldown - dt);
-  player.mana = Math.min(MANA_MAX, player.mana + MANA_REGEN * dt);
   if (!player.act) {
     player.comboTimer = Math.max(0, player.comboTimer - dt);
     if (player.comboTimer === 0) player.combo = 0;
@@ -1985,10 +1987,10 @@ function update(dt) {
   }
   if (player.onGround) player.y = GROUND_Y - player.h;
 
-  // The clock on a skill shows how long until there's enough mana for it
+  // The shaded clock on a skill fills with the mana it still lacks (and shows how many points that is)
   [[dashBtn, player.dashCooldown, DASH_COOLDOWN],
-   ...[sk1Btn, sk2Btn, sk3Btn].map((b, i) => [b, Math.max(0, SKILL_MANA[i] - player.mana) / MANA_REGEN, SKILL_MANA[i] / MANA_REGEN])
-  ].forEach(([b, left, max]) => showCooldown(b, left, max));
+   ...[sk1Btn, sk2Btn, sk3Btn].map((b, i) => [b, Math.max(0, SKILL_MANA[i] - player.mana), SKILL_MANA[i]])
+  ].forEach(([b, left, max], i) => showCooldown(b, left, max, i > 0));
   if (hintTimer > 0) {
     hintTimer -= dt;
     if (hintTimer <= 2) document.body.classList.remove("show-hint");   // then it fades over those last 2 s
@@ -2034,6 +2036,7 @@ function update(dt) {
   for (const m of impacts) m.t += dt;
   impacts = impacts.filter((m) => m.t < 0.3);
   updateCoins(dt);
+  updatePotions(dt);
   corpses = corpses.filter((c) => c.t < 3.5);   // bodies fade away after a few seconds
 }
 
@@ -2066,6 +2069,44 @@ function killEnemy(o, gold = 1 + Math.floor(Math.random() * 3)) {
   corpses.push({ kind: o.kind, cx: o.x + o.w / 2, feet: o.y + o.h, dir: o.dir, fling: o.fling || 1, t: 0 });
   // Show how much gold he dropped, floating up from where he fell
   dropGold(o.x + o.w / 2, o.y + 20, gold, o.y - 6);
+  dropPotions(o.x + o.w / 2, o.y + 24, o.kind === "boss");
+}
+
+// Enemies sometimes drop a potion (red = health, blue = mana); bosses drop one of each. He picks one up by walking over it.
+function dropPotions(x, y, boss) {
+  const kinds = boss ? ["hp", "mp"] : Math.random() < POTION_CHANCE ? [Math.random() < 0.5 ? "hp" : "mp"] : [];
+  kinds.forEach((kind, i) => potions.push({ kind, x: x + (i ? 26 : 0), y, vy: -330, vx: i ? 60 : -20, age: 0 }));
+}
+function updatePotions(dt) {
+  const pcx = player.x + player.w / 2;
+  for (const p of potions) {
+    p.age += dt;
+    p.vy += GRAVITY * 0.6 * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.y > GROUND_Y - 9) { p.y = GROUND_Y - 9; p.vy *= -0.35; p.vx *= 0.5; if (Math.abs(p.vy) < 40) p.vy = 0; }
+    if (Math.abs(p.x - pcx) < 34 && player.y + player.h > GROUND_Y - 60 && state === "running") {
+      p.taken = true;
+      if (p.kind === "hp") player.hp = Math.min(PLAYER_MAX_HP, player.hp + POTION_HEAL);
+      else player.mana = Math.min(MANA_MAX, player.mana + POTION_MANA);
+      popups.push({ x: p.x, y: p.y - 22, t: 0, text: p.kind === "hp" ? "+" + POTION_HEAL + " HP" : "+" + POTION_MANA + " MANA" });
+      burst(p.x, p.y, 8, p.kind === "hp" ? "#ff5a5a" : "#5aa8ff", 160);
+      sfx.point();
+    } else if (p.age > POTION_LIFE) p.taken = true;
+  }
+  potions = potions.filter((p) => !p.taken);
+}
+// A little pixel bottle: red for health, blue for mana (it blinks before it disappears)
+function drawPotion(p) {
+  if (p.age > POTION_LIFE - 3 && Math.floor(p.age * 8) % 2) return;
+  const x = Math.round(p.x) - 6, y = Math.round(p.y) - 9 + Math.round(Math.sin(p.age * 5) * 1.5);
+  const fill = p.kind === "hp" ? "#e8403a" : "#3d8bff", light = p.kind === "hp" ? "#ff9a8f" : "#9fd0ff";
+  ctx.fillStyle = "#1a1a22";
+  ctx.fillRect(x + 4, y - 1, 4, 3); ctx.fillRect(x + 2, y + 2, 8, 1); ctx.fillRect(x - 1, y + 5, 14, 12); ctx.fillRect(x + 1, y + 3, 10, 2);
+  ctx.fillStyle = "#c9b58a"; ctx.fillRect(x + 5, y, 2, 2);   // cork
+  ctx.fillStyle = "#e8e8f0"; ctx.fillRect(x + 3, y + 3, 6, 2);   // glass neck
+  ctx.fillStyle = fill; ctx.fillRect(x + 1, y + 6, 10, 10);
+  ctx.fillStyle = light; ctx.fillRect(x + 2, y + 7, 2, 5);
 }
 
 // Coins pop out of the enemy, then fly straight to the gold icon in the HUD and are counted there
@@ -3413,6 +3454,7 @@ function draw() {
   for (const o of foes) drawFoe(o);
   drawProjectiles();
   coins.forEach(drawCoin);
+  potions.forEach(drawPotion);
   for (const p of sparks) {
     ctx.globalAlpha = Math.max(0, 1 - p.t / p.life);
     ctx.fillStyle = p.color;
