@@ -250,7 +250,7 @@
     text-shadow: 0 1px 3px #000;
   }
   .shop-row { display: flex; gap: 14px; }
-  /* Customize: a live preview of the hero next to the hats / scarves / auras */
+  /* Customize: a live preview of the stickman next to his colours / accessories */
   .look-wrap { display: flex; align-items: center; gap: 22px; max-width: 96vw; }
   #lookPreview {
     height: min(62vh, 300px);
@@ -925,225 +925,145 @@ function equipSkin(id) {
 
 function invMessage(text) { document.getElementById("invMsg").textContent = text; }
 
-// --- Customize: hats, scarf colours and the aura (the glow around him) ---
-// Everything is bought with gold. Each group keeps its own owned list and equipped item.
-const HATS = {
-  none:     { name: "NO HAT", price: 0 },
-  cap:      { name: "RED CAP", price: 50 },
+// --- Customize: the stickman's colour and accessories ---
+// He is always the yellow pixel stickman by default. Everything else is bought with gold.
+// Each group keeps its own owned list; the colour has one equipped item, accessories can be stacked.
+const COLORS = {
+  yellow: { name: "YELLOW", price: 0, filter: "" },
+  orange: { name: "ORANGE", price: 40, filter: "hue-rotate(-27deg)" },
+  red:    { name: "RED", price: 40, filter: "hue-rotate(-57deg) saturate(1.2)" },
+  green:  { name: "GREEN", price: 40, filter: "hue-rotate(63deg)" },
+  blue:   { name: "BLUE", price: 60, filter: "hue-rotate(158deg)" },
+  purple: { name: "PURPLE", price: 60, filter: "hue-rotate(218deg)" },
+  pink:   { name: "PINK", price: 60, filter: "hue-rotate(263deg) brightness(1.1)" },
+  white:  { name: "WHITE", price: 80, filter: "saturate(0) brightness(1.15)" },
+  shadow: { name: "SHADOW", price: 80, filter: "saturate(0) brightness(0.45)" },
+  rainbow: { name: "RAINBOW", price: 400, rainbow: true }
+};
+const ACCESSORIES = {
+  shades:   { name: "SUNGLASSES", price: 60 },
   headband: { name: "NINJA HEADBAND", price: 80 },
-  party:    { name: "PARTY HAT", price: 120 },
-  cowboy:   { name: "COWBOY HAT", price: 200 },
-  tophat:   { name: "TOP HAT", price: 350 },
-  viking:   { name: "VIKING HELMET", price: 600 },
-  wizard:   { name: "WIZARD HAT", price: 1000 },
-  crown:    { name: "GOLD CROWN", price: 2500 },
-  halo:     { name: "ANGEL HALO", price: 5000 }
-};
-const SCARVES = {
-  none:   { name: "NO SCARF", price: 0 },
-  red:    { name: "RED", price: 0, a: "#e53030", b: "#a31515" },
-  blue:   { name: "BLUE", price: 40, a: "#3a7bff", b: "#1f4bb0" },
-  green:  { name: "GREEN", price: 40, a: "#3fcf5a", b: "#1f8a35" },
-  purple: { name: "PURPLE", price: 60, a: "#a35cff", b: "#6a2fc0" },
-  pink:   { name: "PINK", price: 60, a: "#ff6fb5", b: "#c23a82" },
-  gold:   { name: "GOLD", price: 150, a: "#ffd34d", b: "#c9961a" },
-  rainbow: { name: "RAINBOW", price: 500, rainbow: true }
-};
-const AURAS = {
-  none:   { name: "NO AURA", price: 0 },
-  blue:   { name: "BLUE", price: 0, rgb: "70,160,255" },
-  red:    { name: "RED", price: 60, rgb: "255,90,70" },
-  green:  { name: "GREEN", price: 60, rgb: "80,220,120" },
-  purple: { name: "PURPLE", price: 100, rgb: "178,102,255" },
-  gold:   { name: "GOLD", price: 200, rgb: "255,200,60" },
-  rainbow: { name: "RAINBOW", price: 600, rainbow: true }
+  scarf:    { name: "RED SCARF", price: 100 },
+  bowtie:   { name: "BOW TIE", price: 120 },
+  eyepatch: { name: "EYE PATCH", price: 150 },
+  monocle:  { name: "GOLD MONOCLE", price: 200 }
 };
 const LOOK_GROUPS = {
-  hat:   { label: "HATS", items: HATS },
-  scarf: { label: "SCARF", items: SCARVES },
-  aura:  { label: "AURA", items: AURAS }
+  color: { label: "COLOR", items: COLORS },
+  acc:   { label: "ACCESSORIES", items: ACCESSORIES, multi: true }
 };
-const look = Object.assign(
-  { owned: { hat: ["none"], scarf: ["red"], aura: ["blue"] }, equipped: { hat: "none", scarf: "red", aura: "blue" } },
-  JSON.parse(localStorage.getItem("stickgo-look") || "{}")
-);
-for (const [group, info] of Object.entries(LOOK_GROUPS)) {   // forget anything that is no longer sold
-  look.owned[group] = (look.owned[group] || []).filter((id) => info.items[id]);
-  if (info.items.none && !look.owned[group].includes("none")) look.owned[group].unshift("none");   // "none" is always free
-  if (!look.owned[group].length) look.owned[group] = [Object.keys(info.items)[0]];
-  if (!look.owned[group].includes(look.equipped[group])) look.equipped[group] = look.owned[group][0];
-}
-function saveLook() { localStorage.setItem("stickgo-look", JSON.stringify(look)); }
+const look = { owned: { color: ["yellow"], acc: [] }, equipped: { color: "yellow", acc: [] } };
+try {
+  const saved = JSON.parse(localStorage.getItem("stickgo-look2") || "{}");
+  if (saved.owned && saved.equipped) {
+    look.owned.color = (saved.owned.color || []).filter((id) => COLORS[id]);
+    look.owned.acc = (saved.owned.acc || []).filter((id) => ACCESSORIES[id]);
+    look.equipped.color = saved.equipped.color;
+    look.equipped.acc = (saved.equipped.acc || []).filter((id) => look.owned.acc.includes(id));
+  }
+} catch (e) { /* a broken save just means the defaults */ }
+if (!look.owned.color.includes("yellow")) look.owned.color.unshift("yellow");   // yellow is always the default
+if (!look.owned.color.includes(look.equipped.color)) look.equipped.color = "yellow";
+function saveLook() { localStorage.setItem("stickgo-look2", JSON.stringify(look)); }
 
-// Rainbow items drift slowly through the colours (a gentle fade, not a flash)
-function rainbowHue() { return (performance.now() / 1000 * 50) % 360; }
-function scarfColors() {
-  const s = SCARVES[look.equipped.scarf] || SCARVES.red;
-  if (!s.rainbow) return s;
-  const h = rainbowHue();
-  return { a: `hsl(${h}, 85%, 58%)`, b: `hsl(${(h + 25) % 360}, 85%, 40%)` };
-}
-function auraColors() {
-  const a = AURAS[look.equipped.aura] || AURAS.blue;
-  if (a.rainbow) { const h = rainbowHue(); return { front: `hsla(${h}, 100%, 60%, 0.30)`, back: `hsla(${h}, 100%, 60%, 0.16)` }; }
-  return { front: `rgba(${a.rgb}, 0.30)`, back: `rgba(${a.rgb}, 0.16)` };
+// Rainbow drifts slowly through the colours (a gentle fade, not a flash)
+function colorFilter(id) {
+  const c = COLORS[id] || COLORS.yellow;
+  if (c.rainbow) return `hue-rotate(${Math.round((performance.now() / 1000 * 50) % 360)}deg)`;
+  return c.filter;
 }
 
-// Each hat is drawn upright around the head's centre (the head is a circle of radius 8, he
-// faces right); drawHat tilts it with his head.
-function drawHatShape(id, t) {
-  ctx.lineJoin = "round";
-  ctx.lineCap = "round";
-  const poly = (color, pts) => {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(pts[0][0], pts[0][1]);
-    for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]);
-    ctx.closePath();
-    ctx.fill();
-  };
-  const dome = (color, r, cy) => {
-    ctx.fillStyle = color;
-    ctx.beginPath(); ctx.arc(0, cy, r, Math.PI, 0); ctx.closePath(); ctx.fill();
-  };
+// Where his head is in every frame of every sheet: [x, y] in frame pixels, so accessories can
+// follow it (found by tools/find_hero_heads.py). The head is a circle about 6 pixels in radius.
+const HERO_HEADS = {"idle":[[58,16],[58,18],[58,18],[58,16]],"run":[[72,29],[70,28],[71,27],[70,28],[71,29],[72,29],[70,28],[71,27],[70,28],[71,29]],"jump":[[69,9],[71,7],[69,9]],"jump_peak":[[64,8],[60,8],[58,8]],"fall":[[58,7],[59,7],[59,7],[59,7]],"dash":[[56,28],[56,28],[56,28],[56,28],[56,28],[56,28],[59,31],[59,31],[59,31],[59,31],[59,31]],"attack1":[[57,26],[59,26],[61,22],[60,22],[54,22],[51,32],[50,34],[54,21],[54,15],[54,14]],"attack2":[[58,32],[60,23],[58,24],[58,24],[59,22],[62,26],[64,24],[58,24]],"attack3":[[56,23],[66,29],[63,28],[68,33],[68,33],[68,24],[64,22],[62,16],[60,18],[60,16]],"skill1":[[55,39],[55,40],[55,40],[55,40],[64,24],[64,24],[68,23],[68,23],[68,23]],"skill2":[[65,19],[67,18],[66,18],[65,20],[66,18],[68,20],[65,18],[65,18],[66,18],[56,23],[66,29],[63,28],[68,33],[68,33],[68,24],[64,22],[62,16],[60,18],[60,16]],"skill3":[[60,17],[55,19],[57,14],[57,14],[60,18],[86,18],[87,21],[87,21],[67,24],[69,23],[76,21],[76,12],[81,18],[72,20],[72,20],[72,20],[72,20],[72,20],[72,20],[52,14],[60,17],[60,22],[57,17],[57,17],[58,16]],"start_skill3":[[58,20],[62,21],[61,21]],"hit1":[[45,18],[45,18],[45,18]],"hit3":[[58,22],[58,22],[58,22]]};
+
+// Pixel-art accessories, drawn around the head's centre (hx, hy) in sprite pixels. He faces right.
+function drawAccessory(id, hx, hy) {
+  const px = (color, x, y, w, h) => { ctx.fillStyle = color; ctx.fillRect(Math.round(hx + x), Math.round(hy + y), w, h); };
   switch (id) {
-    case "cap":
-      dome("#d62c2c", 8.7, -3.6);
-      ctx.fillStyle = "#a31d1d";
-      ctx.beginPath(); ctx.moveTo(2, -4.4); ctx.quadraticCurveTo(12, -6.5, 15, -2.4); ctx.lineTo(2, -2.8); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, -12.3, 1.3, 0, Math.PI * 2); ctx.fill();
+    case "shades":
+      px("#111", -5, -3, 12, 1);
+      px("#111", 0, -3, 7, 4);
+      px("#8fd0ff", 1, -2, 2, 1);
       break;
-    case "headband": {
-      const w = Math.sin(t * 8) * 2;
-      ctx.strokeStyle = "#e53030";
-      ctx.lineWidth = 3.2;
-      ctx.beginPath(); ctx.moveTo(-7.4, -5.2); ctx.lineTo(7.4, -5.2); ctx.stroke();
-      ctx.lineWidth = 2.6;
-      ctx.beginPath(); ctx.moveTo(-7, -5); ctx.quadraticCurveTo(-13, -4 + w, -19, -1 + w * 1.5); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-7, -4.2); ctx.quadraticCurveTo(-12, -1 - w, -17, 2 - w); ctx.stroke();
+    case "headband":
+      px("#e53030", -6, -4, 12, 2);
+      px("#e53030", -9, -3, 3, 1);
+      px("#a31515", -11, -1, 4, 1);
+      px("#e53030", -9, 0, 3, 1);
       break;
-    }
-    case "party":
-      poly("#ff5fa8", [[-6, -6.4], [6, -6.4], [0.5, -21]]);
-      ctx.strokeStyle = "#ffe14d"; ctx.lineWidth = 1.6;
-      for (const [y, hw] of [[-9.5, 4.8], [-13.5, 3.4], [-17, 2]]) { ctx.beginPath(); ctx.moveTo(0.3 - hw, y); ctx.lineTo(0.3 + hw, y); ctx.stroke(); }
-      ctx.fillStyle = "#ffe14d"; ctx.beginPath(); ctx.arc(0.5, -21.5, 2.2, 0, Math.PI * 2); ctx.fill();
+    case "scarf":
+      px("#e53030", -5, 5, 11, 3);
+      px("#a31515", -5, 7, 11, 1);
+      px("#e53030", -9, 6, 4, 2);
+      px("#a31515", -12, 8, 5, 2);
       break;
-    case "cowboy":
-      ctx.fillStyle = "#8b5a2b";
-      ctx.beginPath(); ctx.ellipse(0, -6.8, 15, 3.2, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#a06a35";
-      ctx.beginPath(); ctx.moveTo(-6.6, -7); ctx.lineTo(-5.6, -16); ctx.quadraticCurveTo(0, -13.2, 5.6, -16); ctx.lineTo(6.6, -7); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = "#5a3a1a"; ctx.fillRect(-6.6, -9.8, 13.2, 2.2);
+    case "bowtie":
+      px("#d02020", -5, 6, 4, 4);
+      px("#d02020", 2, 6, 4, 4);
+      px("#7a1010", -1, 7, 3, 2);
       break;
-    case "tophat":
-      ctx.fillStyle = "#16161d";
-      ctx.fillRect(-10.5, -8.8, 21, 2.6);
-      ctx.fillRect(-6.6, -22, 13.2, 13.6);
-      ctx.fillStyle = "#b33"; ctx.fillRect(-6.6, -11.8, 13.2, 3);
+    case "eyepatch":
+      px("#111", -6, -3, 12, 1);
+      px("#111", 2, -2, 4, 4);
       break;
-    case "viking":
-      dome("#9aa3ad", 8.8, -4);
-      ctx.fillStyle = "#6a5030"; ctx.fillRect(-8.8, -6.4, 17.6, 2.4);
-      ctx.strokeStyle = "#f1e9d0"; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(-7.8, -6); ctx.quadraticCurveTo(-14, -8, -11.5, -17); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(7.8, -6); ctx.quadraticCurveTo(14, -8, 11.5, -17); ctx.stroke();
-      break;
-    case "wizard":
-      ctx.fillStyle = "#4b2a8c";
-      ctx.beginPath(); ctx.ellipse(0, -6.6, 12.5, 2.8, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#6a3cc4";
-      ctx.beginPath(); ctx.moveTo(-8, -6.8); ctx.quadraticCurveTo(-4, -22, 8, -30); ctx.quadraticCurveTo(5, -16, 8, -6.8); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = "#ffe14d";
-      for (const [x, y, r] of [[0.5, -13, 1.5], [3.4, -21, 1.2]]) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
-      break;
-    case "crown":
-      poly("#ffd34d", [[-7, -6.6], [-8, -16.5], [-3.7, -11.8], [0, -18.5], [3.7, -11.8], [8, -16.5], [7, -6.6]]);
-      ctx.strokeStyle = "#a8740a"; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(-7, -6.6); ctx.lineTo(-8, -16.5); ctx.lineTo(-3.7, -11.8); ctx.lineTo(0, -18.5); ctx.lineTo(3.7, -11.8); ctx.lineTo(8, -16.5); ctx.lineTo(7, -6.6); ctx.closePath(); ctx.stroke();
-      for (const [x, c] of [[-4.2, "#3a7bff"], [0, "#e03030"], [4.2, "#3fcf5a"]]) { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, -9.3, 1.3, 0, Math.PI * 2); ctx.fill(); }
-      break;
-    case "halo":
-      ctx.strokeStyle = "#ffe27a"; ctx.lineWidth = 2.2;
-      ctx.shadowColor = "#ffd34d"; ctx.shadowBlur = 6;
-      ctx.beginPath(); ctx.ellipse(0, -15 + Math.sin(t * 3) * 0.8, 8.5, 2.6, 0, 0, Math.PI * 2); ctx.stroke();
-      ctx.shadowBlur = 0;
+    case "monocle":
+      px("#e8b923", 2, -3, 5, 1);
+      px("#e8b923", 2, 1, 5, 1);
+      px("#e8b923", 2, -2, 1, 3);
+      px("#e8b923", 6, -2, 1, 3);
+      px("rgba(200,235,255,0.55)", 3, -2, 3, 3);
+      px("#e8b923", 4, 2, 1, 6);
       break;
   }
 }
 
-function drawHat(id, head, neck) {
-  if (!id || id === "none") return;
-  ctx.save();
-  ctx.translate(head.x, head.y);
-  ctx.rotate(Math.atan2(head.x - neck.x, -(head.y - neck.y)));   // follow the tilt of his head
-  drawHatShape(id, performance.now() / 1000);
-  ctx.restore();
+function drawAccessories(accs, sheet, frame) {
+  const head = (HERO_HEADS[sheet] || [])[frame];
+  if (!head) return;
+  for (const id of accs) drawAccessory(id, head[0], head[1]);
 }
 
 // Draws into another canvas by pointing ctx at it for a moment
 function withContext(g, fn) {
   const savedCtx = ctx, savedColors = colors;
   ctx = g;
-  colors = paletteAt(0);          // the day colours, so the dark hero shows on the light preview
+  colors = paletteAt(0);          // the day colours, so everything shows on the light preview
   try { fn(); } finally { ctx = savedCtx; colors = savedColors; }
 }
 
-let lookPhase = 0;
+// The big preview: the idle stickman as he will look in the game
 function drawLookPreview() {
   const cv = document.getElementById("lookPreview");
   const g = cv.getContext("2d");
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, cv.width, cv.height);
-  const S = cv.height / 92;
-  g.setTransform(S, 0, 0, S, cv.width / 2 - 11 * S, 30 * S);
-  withContext(g, () => {
-    const pose = getPose({ runPhase: lookPhase, onGround: true, ducking: false, vy: 0, attack: 0, x: 0, y: 0, w: 26, h: 60 });
-    drawHero(pose, false);
-    drawSword(pose, false);
-  });
+  const sc = 4.2;
+  const fr = stateFrame(HS.idle, (performance.now() / 1000 * (HS.idle.fps || 8)) % HS.idle.frames.length);
+  withContext(g, () => drawSprite(fr.sheet, fr.frame, cv.width / 2 + 6 * sc, cv.height - 28, 1, 0, sc));
 }
 
 function drawLookIcon(cv, group, id) {
   const g = cv.getContext("2d");
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, cv.width, cv.height);
-  const item = LOOK_GROUPS[group].items[id];
-  const hue = rainbowHue();
-  if (group === "hat") {
-    const S = cv.height / 42;
-    g.setTransform(S, 0, 0, S, cv.width / 2, cv.height * 0.78);
-    withContext(g, () => {
-      g.fillStyle = "#2a2a36";
-      g.beginPath(); g.arc(0, 0, 8, 0, Math.PI * 2); g.fill();
-      g.fillStyle = "#cfe7ff";
-      g.beginPath(); g.ellipse(2.6, -0.8, 1.5, 2.2, 0.18, 0, Math.PI * 2); g.fill();
-      drawHatShape(id, performance.now() / 1000);
-    });
-  } else if (group === "scarf") {
-    const a = item.rainbow ? `hsl(${hue}, 85%, 58%)` : item.a, b = item.rainbow ? `hsl(${(hue + 25) % 360}, 85%, 40%)` : item.b;
-    g.lineCap = "round";
-    g.lineWidth = 11;
-    g.strokeStyle = b;
-    g.beginPath(); g.moveTo(cv.width * 0.72, cv.height * 0.44); g.quadraticCurveTo(cv.width * 0.45, cv.height * 0.62, cv.width * 0.12, cv.height * 0.8); g.stroke();
-    g.strokeStyle = a;
-    g.beginPath(); g.moveTo(cv.width * 0.72, cv.height * 0.4); g.quadraticCurveTo(cv.width * 0.45, cv.height * 0.3, cv.width * 0.1, cv.height * 0.42); g.stroke();
-    g.fillStyle = a;
-    g.beginPath(); g.arc(cv.width * 0.74, cv.height * 0.42, 11, 0, Math.PI * 2); g.fill();
+  if (group === "color") {
+    const sc = 1.8, fr = stateFrame(HS.idle, 0);
+    withContext(g, () => drawSprite(fr.sheet, fr.frame, cv.width / 2 + 6 * sc, cv.height - 6, 1, 0, sc, id, []));
   } else {
-    const c = item.rainbow ? `${hue}, 100%, 60%` : null;
-    const cx = cv.width / 2, cy = cv.height / 2;
-    const grad = g.createRadialGradient(cx, cy, 8, cx, cy, 58);
-    grad.addColorStop(0, item.rainbow ? `hsla(${c}, 0.85)` : `rgba(${item.rgb}, 0.85)`);
-    grad.addColorStop(1, item.rainbow ? `hsla(${c}, 0)` : `rgba(${item.rgb}, 0)`);
-    g.fillStyle = grad;
-    g.beginPath(); g.arc(cx, cy, 58, 0, Math.PI * 2); g.fill();
-    g.fillStyle = "#1a1a22";
-    g.beginPath(); g.arc(cx, cy, 18, 0, Math.PI * 2); g.fill();
+    const S = cv.height / 24;
+    g.setTransform(S, 0, 0, S, cv.width / 2, cv.height * 0.45);
+    withContext(g, () => {
+      g.fillStyle = "#fbf236";
+      g.beginPath(); g.arc(0, 0, 6, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#d0c817";
+      g.fillRect(-1, 5, 2, 9);
+      drawAccessory(id, 0, 0);
+    });
   }
 }
 
-let lookTab = "hat";
+let lookTab = "color";
 let lookTimer = null;
 
 function refreshLook() {
@@ -1160,21 +1080,21 @@ function refreshLook() {
     tab.addEventListener("click", () => { lookTab = group; lookMessage(""); refreshLook(); });
     tabs.appendChild(tab);
   }
+  const multi = LOOK_GROUPS[lookTab].multi;
   for (const [id, item] of Object.entries(LOOK_GROUPS[lookTab].items)) {
-    if (id === "none") continue;   // "none" is just the unequipped state, tapped off via UNEQUIP
     const owned = look.owned[lookTab].includes(id);
-    const equipped = look.equipped[lookTab] === id;
+    const equipped = multi ? look.equipped[lookTab].includes(id) : look.equipped[lookTab] === id;
     const card = document.createElement("div");
     card.className = "card" + (equipped ? " equipped" : "");
     card.style.setProperty("--rar", "#ff8a1f");
     card.innerHTML = `<canvas width="192" height="120"></canvas><div class="name">${item.name}</div><button></button>`;
     const cv = card.querySelector("canvas");
-    if (item.rainbow || id === "headband" || id === "halo") cv.dataset.anim = id;
+    if (item.rainbow) cv.dataset.anim = id;
     cv.dataset.group = lookTab;
     cv.dataset.id = id;
     drawLookIcon(cv, lookTab, id);
     const btn = card.querySelector("button");
-    if (equipped) btn.textContent = LOOK_GROUPS[lookTab].items.none && id !== "none" ? "UNEQUIP" : "EQUIPPED";
+    if (equipped) btn.textContent = multi ? "TAKE OFF" : "EQUIPPED";
     else if (owned) btn.textContent = "EQUIP";
     else { btn.innerHTML = `<span class="coin"></span>${fmt(item.price)}`; btn.classList.toggle("cant", totalGold < item.price); }
     btn.addEventListener("click", () => lookTap(lookTab, id));
@@ -1185,7 +1105,7 @@ function refreshLook() {
 
 // Tapping an item equips it; if you don't own it yet it is bought first
 function lookTap(group, id) {
-  const item = LOOK_GROUPS[group].items[id];
+  const info = LOOK_GROUPS[group], item = info.items[id];
   if (!look.owned[group].includes(id)) {
     if (totalGold < item.price) { lookMessage(`NOT ENOUGH GOLD — NEED ${fmt(item.price - totalGold)} MORE`); return; }
     totalGold -= item.price;
@@ -1193,22 +1113,25 @@ function lookTap(group, id) {
     look.owned[group].push(id);
     sfx.coin();
   }
-  // Tapping the worn hat takes it off
-  if (id !== "none" && LOOK_GROUPS[group].items.none && look.equipped[group] === id) id = "none";
-  look.equipped[group] = id;
+  if (info.multi) {   // accessories: tapping a worn one takes it off
+    const worn = look.equipped[group];
+    if (worn.includes(id)) { worn.splice(worn.indexOf(id), 1); lookMessage(`${item.name} TAKEN OFF`); }
+    else { worn.push(id); lookMessage(`${item.name} EQUIPPED`); }
+  } else {
+    look.equipped[group] = id;
+    lookMessage(`${item.name} EQUIPPED`);
+  }
   saveLook();
-  lookMessage(id === "none" ? `${LOOK_GROUPS[group].label} REMOVED` : `${item.name} EQUIPPED`);
   refreshLook();
 }
 
 function lookMessage(text) { document.getElementById("lookMsg").textContent = text; }
 
-// Keeps the preview running and the animated items (rainbow, headband, halo) moving
+// Keeps the preview running and the animated items (rainbow) moving
 function animateLook() {
   if (!menus.look.classList.contains("open")) { clearInterval(lookTimer); lookTimer = null; return; }
   if (lookTimer) return;
   lookTimer = setInterval(() => {
-    lookPhase += 0.45;
     drawLookPreview();
     for (const cv of document.querySelectorAll("#lookItems canvas[data-anim]")) drawLookIcon(cv, cv.dataset.group, cv.dataset.id);
   }, 70);
@@ -2734,70 +2657,6 @@ function drawSwordPreview(canvas, skin) {
     g.globalAlpha = 1;
   }
 }
-const HERO_HEAD = 9.5;   // the hero's head is bigger than the others', like the art
-function drawHero(pts, down = false) {
-  const t = performance.now() / 1000;
-  const h = pts.head;
-
-  // Rim light (the aura): the same figure, wider and faint, drawn underneath
-  if (look.equipped.aura !== "none") {
-    const aura = auraColors();
-    drawFigure(pts, aura.front, aura.back, 8.2, HERO_HEAD + 2.2);
-  }
-  drawFigure(pts, colors.hero, colors.heroBack, 4.6, HERO_HEAD);
-
-  // Shoes and hands
-  ctx.lineCap = "round";
-  // No shoes: the legs just end in a rounded tip
-  for (const [hand, color] of [[pts.handB, colors.heroBack], [pts.handF, colors.hero]]) {
-    ctx.fillStyle = color;
-    ctx.beginPath(); ctx.arc(hand.x, hand.y, 2.7, 0, Math.PI * 2); ctx.fill();
-  }
-
-  // Scarf: two tails that flutter harder (and longer) the faster the game goes
-  const knot = { x: pts.neck.x - 1, y: pts.neck.y + 1 };
-  const len = 18 + (speed || 400) * 0.014;
-  const scarf = scarfColors();
-  for (const [l, dy, color, ph] of look.equipped.scarf === "none" ? [] : [[len * 1.3, 3, scarf.b, 1.3], [len, 0, scarf.a, 0]]) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(knot.x, knot.y);
-    if (down) {
-      ctx.quadraticCurveTo(knot.x - 4, knot.y + 5, knot.x - 5 + dy, knot.y + 14);
-    } else {
-      const w = Math.sin(t * 13 + ph) * 3;
-      ctx.quadraticCurveTo(knot.x - l * 0.55, knot.y + dy + w, knot.x - l, knot.y + dy + 2 + Math.sin(t * 13 + ph + 1.5) * 3.5);
-    }
-    ctx.stroke();
-  }
-  if (look.equipped.scarf !== "none") {
-    ctx.fillStyle = scarf.a;
-    ctx.beginPath(); ctx.arc(knot.x, knot.y, 3, 0, Math.PI * 2); ctx.fill();
-  }
-
-  // Face: narrowed glowing eyes under a determined brow (he faces right)
-  ctx.strokeStyle = colors.sky;
-  ctx.fillStyle = colors.sky;
-  if (down) {
-    ctx.lineWidth = 1.2;
-    for (const ex of [0.6, 4.2]) {
-      line(h.x + ex - 1.5, h.y - 2.4, h.x + ex + 1.5, h.y + 0.6);
-      line(h.x + ex + 1.5, h.y - 2.4, h.x + ex - 1.5, h.y + 0.6);
-    }
-  } else {
-    ctx.shadowColor = "#9fd4ff";
-    ctx.shadowBlur = 7;
-    ctx.fillStyle = "#ffffff";   // big glowing white eyes, slanted into an angry brow
-    for (const [ex, tilt] of [[0.9, -0.5], [5.2, 0.5]]) {
-      ctx.beginPath(); ctx.ellipse(h.x + ex, h.y - 0.8, 2.1, 2.9, tilt, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-  }
-
-  drawHat(look.equipped.hat, h, pts.neck);
-}
-
 // A swirling purple gate: opens, holds while the enemy steps out, then closes
 function drawPortal(p) {
   const open = Math.min(1, p.t / 0.4), shut = p.t > 1.0 ? Math.max(0, 1 - (p.t - 1.0) / 0.4) : 1;
@@ -2845,16 +2704,22 @@ function heroSprite() {
   return stateFrame(HS.idle, rate(HS.idle) % HS.idle.frames.length);
 }
 
-// One frame of a sheet, feet at (cx, feet); face = 1 (right) or -1 (left)
-function drawSprite(sheet, frame, cx, feet, face, rot = 0) {
+// One frame of a sheet, feet at (cx, feet); face = 1 (right) or -1 (left). The yellow body is
+// recoloured with the equipped colour and the accessories are drawn on his head.
+function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, color = look.equipped.color, accs = look.equipped.acc) {
   const img = SHEETS[sheet];
   if (!img.complete || !img.naturalWidth) return;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.translate(cx, feet + 2 * SC);
+  ctx.translate(cx, feet + 2 * sc);
   if (rot) ctx.rotate(rot * face);
-  ctx.scale(face * SC, SC);
-  ctx.drawImage(img, frame * FRAME_W, 0, FRAME_W, FRAME_H, -FRAME_W / 2, -FRAME_H, FRAME_W, FRAME_H);
+  ctx.scale(face * sc, sc);
+  ctx.translate(-FRAME_W / 2, -FRAME_H);   // from here on, units are sprite pixels
+  const f = colorFilter(color);
+  if (f) ctx.filter = f;
+  ctx.drawImage(img, frame * FRAME_W, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
+  ctx.filter = "none";
+  if (accs.length) drawAccessories(accs, sheet, frame);
   ctx.restore();
 }
 
@@ -2892,8 +2757,6 @@ function drawStickman() {
   drawSkinSlash(cx, feet);
   ctx.save();
   if (player.hurt > 0 && state === "running") ctx.globalAlpha = 0.65;
-  ctx.shadowColor = auraColors().front;   // the aura from CUSTOMIZE glows around him
-  ctx.shadowBlur = 8;
   drawSprite(fr.sheet, fr.frame, cx, feet, player.facing, fr.rot || 0);
   ctx.restore();
 }
