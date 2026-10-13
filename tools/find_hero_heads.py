@@ -5,7 +5,7 @@ from PIL import Image
 
 SHEETS = {"idle": 4, "run": 10, "jump": 3, "jump_peak": 3, "fall": 4, "dash": 11,
           "attack1": 10, "attack2": 8, "attack3": 10, "skill1": 9, "skill2": 19, "skill3": 25,
-          "start_skill3": 3, "hit1": 3, "hit3": 3}
+          "start_skill3": 3, "hit1": 3, "hit3": 3, "death": 10}
 W, H = 128, 64
 
 def yellow(p):
