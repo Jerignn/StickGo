@@ -267,6 +267,7 @@
   <button data-action="difficulty" id="difficultyBtn"></button>
   <button data-action="btnSize" id="btnSizeBtn"></button>
   <button data-action="sound" id="soundBtn"></button>
+  <button data-action="music" id="musicBtn"></button>
   <button data-action="comfort" id="comfortBtn"></button>
   <button data-action="resetHigh" id="resetHighBtn">RESET HIGH SCORES</button>
   <button data-action="back">BACK</button>
@@ -326,7 +327,7 @@ const BUTTON_SIZES = {
 };
 
 const settings = Object.assign(
-  { difficulty: "normal", btnSize: "medium", sound: true, comfort: false },
+  { difficulty: "normal", btnSize: "medium", sound: true, music: true, comfort: false },
   JSON.parse(localStorage.getItem("stickgo-settings") || "{}")
 );
 
@@ -535,6 +536,7 @@ function refreshSettingsLabels() {
   document.getElementById("btnSizeBtn").textContent =
     `BUTTON SIZE: ${BUTTON_SIZES[settings.btnSize].label}`;
   document.getElementById("soundBtn").textContent = `SOUND: ${settings.sound ? "ON" : "OFF"}`;
+  document.getElementById("musicBtn").textContent = `MUSIC: ${settings.music ? "ON" : "OFF"}`;
   document.getElementById("comfortBtn").textContent = `COMFORT MODE: ${settings.comfort ? "ON" : "OFF"}`;
   document.getElementById("resetHighBtn").textContent =
     resetArmed ? "TAP AGAIN TO CONFIRM" : "RESET HIGH SCORES";
@@ -604,6 +606,11 @@ const menuActions = {
   },
   sound: () => {
     settings.sound = !settings.sound;
+    saveSettings();
+    refreshSettingsLabels();
+  },
+  music: () => {
+    settings.music = !settings.music;
     saveSettings();
     refreshSettingsLabels();
   },
@@ -789,6 +796,73 @@ function beep(freq, dur, { type = "square", vol = 0.06, slideTo, delay = 0 } = {
   osc.connect(gain).connect(audio.destination);
   osc.start(t);
   osc.stop(t + dur);
+}
+
+// --- Music ---
+// A looping synthesized tune (Am - F - C - G): bass, arpeggio and drums, scheduled a
+// little ahead of time from the main loop. It plays only while a run is going.
+const MUSIC_STEP = 60 / 150 / 2;   // one eighth note at 150 bpm
+const MUSIC_CHORDS = [
+  { bass: 45, notes: [69, 72, 76] },   // Am
+  { bass: 41, notes: [65, 69, 72] },   // F
+  { bass: 48, notes: [72, 76, 79] },   // C
+  { bass: 43, notes: [71, 74, 79] }    // G
+];
+const ARP_ORDER = [0, 1, 2, 1, 0, 1, 2, 1];
+let musicNext = 0, musicStep = 0, noiseBuf = null;
+
+const midiHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+
+function musicTone(freq, t, dur, type, vol, slideTo) {
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t);
+  if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+  gain.gain.setValueAtTime(vol, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  osc.connect(gain).connect(audio.destination);
+  osc.start(t);
+  osc.stop(t + dur);
+}
+
+function musicNoise(t, dur, vol) {
+  if (!noiseBuf) {
+    noiseBuf = audio.createBuffer(1, audio.sampleRate * 0.1, audio.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  const src = audio.createBufferSource();
+  const gain = audio.createGain();
+  src.buffer = noiseBuf;
+  gain.gain.setValueAtTime(vol, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(gain).connect(audio.destination);
+  src.start(t);
+}
+
+function scheduleMusicStep(step, t) {
+  const bar = Math.floor(step / 8) % MUSIC_CHORDS.length;
+  const s = step % 8;
+  const chord = MUSIC_CHORDS[bar];
+  musicTone(midiHz(chord.notes[ARP_ORDER[s]]), t, MUSIC_STEP * 0.9, "square", 0.018);
+  if (s === 0 || s === 3 || s === 4 || s === 6) musicTone(midiHz(chord.bass), t, MUSIC_STEP * 1.6, "triangle", 0.07);
+  if (s === 0 || s === 4) musicTone(150, t, 0.12, "sine", 0.09, 45);
+  if (s === 2 || s === 6) musicNoise(t, 0.09, 0.03);
+  if (s % 2 === 1) musicNoise(t, 0.03, 0.012);
+}
+
+function musicTick() {
+  if (!audio || audio.state !== "running" || !settings.sound || !settings.music || state !== "running") {
+    musicNext = 0;   // restart cleanly from the next beat once it can play again
+    return;
+  }
+  const now = audio.currentTime;
+  if (musicNext < now) musicNext = now + 0.05;
+  while (musicNext < now + 0.25) {
+    scheduleMusicStep(musicStep++, musicNext);
+    musicNext += MUSIC_STEP;
+  }
 }
 
 const sfx = {
@@ -2996,6 +3070,7 @@ function loop(time) {
   if (flashTime > 0) flashTime -= dt;
   if (waveBanner > 0 && state === "running") waveBanner -= dt;
   if (bossBanner && state === "running") { bossBanner.t -= dt; if (bossBanner.t <= 0) bossBanner = null; }
+  musicTick();
   draw();
   requestAnimationFrame(loop);
 }
