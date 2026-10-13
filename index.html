@@ -129,10 +129,31 @@
     position: absolute;
     top: 4vh;
     right: 4vw;
-    text-align: right;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
   }
-  #mainMenu .menu-stats p { font: bold 18px "Courier New", monospace; line-height: 1.5; }
-  #goldText { color: #ffd34d; }
+  .stat {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 150px;
+    box-sizing: border-box;
+    padding: 6px 14px;
+    border: 2px solid #ff8a1f;
+    border-radius: 999px;
+    background: rgba(20, 12, 30, 0.6);
+    box-shadow: 0 0 12px rgba(255, 110, 20, 0.45);
+    font: bold 18px "Courier New", monospace;
+    text-shadow: 0 1px 2px #000;
+  }
+  .stat .coin { width: 16px; height: 16px; margin: 0; box-shadow: 0 0 8px rgba(255, 211, 77, 0.8); }
+  .stat-value { margin-left: auto; letter-spacing: 1px; }
+  .stat-gold .stat-value { color: #ffd34d; }
+  .stat-high .stat-value { color: #fff; }
+  .stat-label { color: #ff8a1f; font-size: 13px; letter-spacing: 2px; }
+  .stat-label small { color: #cbb7e0; font-size: 10px; letter-spacing: 1px; }
 
   /* Shop + inventory: same artwork as the main menu, dimmed so the cards stand out */
   .store-menu {
@@ -233,8 +254,11 @@
   </div>
   <button data-action="settings">SETTINGS</button>
   <div class="menu-stats">
-    <p id="goldText"></p>
-    <p id="highText"></p>
+    <div class="stat stat-gold"><span class="coin"></span><span class="stat-value" id="goldText"></span></div>
+    <div class="stat stat-high">
+      <span class="stat-label">BEST <small id="highDiff"></small></span>
+      <span class="stat-value" id="highText"></span>
+    </div>
   </div>
 </div>
 
@@ -515,9 +539,9 @@ function showMenu(name) {
   for (const [key, el] of Object.entries(menus)) el.classList.toggle("open", key === name);
   document.body.classList.toggle("playing", name === null);
   if (name === "main") {
-    document.getElementById("highText").textContent =
-      `HIGH SCORE ${pad5(high(settings.difficulty))} (${DIFFICULTIES[settings.difficulty].label})`;
-    document.getElementById("goldText").textContent = `GOLD ${fmt(totalGold)}`;
+    document.getElementById("highText").textContent = pad5(high(settings.difficulty));
+    document.getElementById("highDiff").textContent = DIFFICULTIES[settings.difficulty].label;
+    document.getElementById("goldText").textContent = fmt(totalGold);
   }
   if (name === "settings") refreshSettingsLabels();
   if (name === "shop") { shopMessage(""); refreshShop(); }
