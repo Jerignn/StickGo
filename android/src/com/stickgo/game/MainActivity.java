@@ -22,6 +22,7 @@ public class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false);   // let the menu music start without a tap
         settings.setDomStorageEnabled(true); // needed for the saved high score
+        WebView.setWebContentsDebuggingEnabled(true);
         webView.loadUrl("file:///android_asset/index.html");
 
         setContentView(webView);

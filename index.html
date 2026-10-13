@@ -779,9 +779,10 @@ function initAudio() {
   if (!audio && AC) audio = new AC();
   if (audio && audio.state === "suspended") audio.resume();
 }
-for (const ev of ["pointerdown", "pointerup", "keydown", "click"]) {
+for (const ev of ["pointerdown", "pointerup", "keydown", "click", "touchstart", "touchend"]) {
   document.addEventListener(ev, initAudio, true);
 }
+initAudio();   // the app allows autoplay, so the menu music can start right away
 
 function beep(freq, dur, { type = "square", vol = 0.06, slideTo, delay = 0 } = {}) {
   if (!settings.sound || !audio || audio.state !== "running") return;
@@ -845,11 +846,15 @@ function scheduleMusicStep(step, t) {
   const bar = Math.floor(step / 8) % MUSIC_CHORDS.length;
   const s = step % 8;
   const chord = MUSIC_CHORDS[bar];
-  musicTone(midiHz(chord.notes[ARP_ORDER[s]]), t, MUSIC_STEP * 0.9, "square", 0.018);
-  if (s === 0 || s === 3 || s === 4 || s === 6) musicTone(midiHz(chord.bass), t, MUSIC_STEP * 1.6, "triangle", 0.07);
-  if (s === 0 || s === 4) musicTone(150, t, 0.12, "sine", 0.09, 45);
-  if (s === 2 || s === 6) musicNoise(t, 0.09, 0.03);
-  if (s % 2 === 1) musicNoise(t, 0.03, 0.012);
+  // Phone speakers are weak on low notes, so the bass is an octave up and doubled with a square
+  musicTone(midiHz(chord.notes[ARP_ORDER[s]]), t, MUSIC_STEP * 0.9, "square", 0.05);
+  if (s === 0 || s === 3 || s === 4 || s === 6) {
+    musicTone(midiHz(chord.bass + 12), t, MUSIC_STEP * 1.6, "triangle", 0.2);
+    musicTone(midiHz(chord.bass + 12), t, MUSIC_STEP * 1.2, "square", 0.03);
+  }
+  if (s === 0 || s === 4) musicTone(180, t, 0.12, "sine", 0.25, 60);
+  if (s === 2 || s === 6) musicNoise(t, 0.09, 0.08);
+  if (s % 2 === 1) musicNoise(t, 0.03, 0.03);
 }
 
 function musicTick() {
