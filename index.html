@@ -2814,10 +2814,14 @@ function drawHero(pts, down = !!ragdoll) {
 
   // Shoes and hands
   ctx.lineCap = "round";
-  for (const [foot, color] of [[pts.footB, colors.heroBack], [pts.footF, colors.hero]]) {
+  // The shoe follows the shin: flat when the shin is upright, toe lifting as the leg
+  // reaches forward and pointing down as it kicks back
+  for (const [foot, knee, color] of [[pts.footB, pts.kneeB, colors.heroBack], [pts.footF, pts.kneeF, colors.hero]]) {
+    const a = Math.max(-1.1, Math.min(1.1, Math.atan2(foot.x - knee.x, foot.y - knee.y) * 0.8));
+    const tx = Math.cos(a), ty = -Math.sin(a);
     ctx.strokeStyle = color;
     ctx.lineWidth = 5.6;
-    line(foot.x - 1, foot.y - 0.8, foot.x + 4.5, foot.y - 0.8);
+    line(foot.x - tx, foot.y - 0.8 - ty, foot.x + tx * 5.5, foot.y - 0.8 + ty * 5.5);
   }
   for (const [hand, color] of [[pts.handB, colors.heroBack], [pts.handF, colors.hero]]) {
     ctx.fillStyle = color;
