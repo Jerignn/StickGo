@@ -846,7 +846,7 @@ function refreshInventory() {
       const card = swordCard(id);
       card.classList.toggle("equipped", equipped);
       const btn = card.querySelector("button");
-      btn.textContent = equipped ? "EQUIPPED" : "EQUIP";
+      btn.textContent = !equipped ? "EQUIP" : id === "starter" ? "EQUIPPED" : "UNEQUIP";
       btn.addEventListener("click", () => equipSkin(id));
       row.appendChild(card);
     }
@@ -855,7 +855,15 @@ function refreshInventory() {
 }
 
 function equipSkin(id) {
-  if (skinState.equipped === id) return;
+  if (skinState.equipped === id) {
+    // Unequipping puts the starter sword back (he always carries one)
+    if (id === "starter") return;
+    skinState.equipped = "starter";
+    saveSkins();
+    refreshInventory();
+    invMessage(`${SWORD_SKINS[id].name} UNEQUIPPED`);
+    return;
+  }
   skinState.equipped = id;
   saveSkins();
   refreshInventory();
@@ -1109,7 +1117,7 @@ function refreshLook() {
     cv.dataset.id = id;
     drawLookIcon(cv, lookTab, id);
     const btn = card.querySelector("button");
-    if (equipped) btn.textContent = "EQUIPPED";
+    if (equipped) btn.textContent = lookTab === "hat" && id !== "none" ? "UNEQUIP" : "EQUIPPED";
     else if (owned) btn.textContent = "EQUIP";
     else { btn.innerHTML = `<span class="coin"></span>${fmt(item.price)}`; btn.classList.toggle("cant", totalGold < item.price); }
     btn.addEventListener("click", () => lookTap(lookTab, id));
@@ -1128,6 +1136,8 @@ function lookTap(group, id) {
     look.owned[group].push(id);
     sfx.coin();
   }
+  // Tapping the worn hat takes it off
+  if (group === "hat" && id !== "none" && look.equipped.hat === id) id = "none";
   look.equipped[group] = id;
   saveLook();
   lookMessage(id === "none" ? "HAT REMOVED" : `${item.name} EQUIPPED`);
