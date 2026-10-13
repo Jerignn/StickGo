@@ -630,7 +630,7 @@ function refreshSettingsLabels() {
     `DIFFICULTY: ${DIFFICULTIES[settings.difficulty].label}${nextRun}`;
   document.getElementById("btnSizeBtn").textContent =
     `BUTTON SIZE: ${BUTTON_SIZES[settings.btnSize].label}`;
-  document.getElementById("soundBtn").textContent = `SOUND: ${settings.sound ? "ON" : "OFF"}`;
+  document.getElementById("soundBtn").textContent = `SOUND FX: ${settings.sound ? "ON" : "OFF"}`;
   document.getElementById("musicBtn").textContent = `MUSIC: ${settings.music ? "ON" : "OFF"}`;
   document.getElementById("comfortBtn").textContent = `COMFORT MODE: ${settings.comfort ? "ON" : "OFF"}`;
   document.getElementById("resetHighBtn").textContent =
@@ -1256,7 +1256,7 @@ function scheduleMusicStep(step, t) {
 }
 
 function musicTick() {
-  if (!audio || audio.state !== "running" || !settings.sound || !settings.music || (state !== "running" && state !== "ready" && state !== "countdown")) {
+  if (!audio || audio.state !== "running" || !settings.music || (state !== "running" && state !== "ready" && state !== "countdown")) {
     musicNext = 0;   // restart cleanly from the next beat once it can play again
     return;
   }
