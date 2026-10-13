@@ -1057,11 +1057,7 @@ function drawLookIcon(cv, group, id) {
   g.clearRect(0, 0, cv.width, cv.height);
   const item = LOOK_GROUPS[group].items[id];
   const hue = rainbowHue();
-  if (id === "none" && group !== "hat") {
-    g.strokeStyle = "#8a8a99"; g.lineWidth = 8; g.lineCap = "round";
-    g.beginPath(); g.arc(cv.width / 2, cv.height / 2, 30, 0, Math.PI * 2); g.stroke();
-    g.beginPath(); g.moveTo(cv.width / 2 - 21, cv.height / 2 + 21); g.lineTo(cv.width / 2 + 21, cv.height / 2 - 21); g.stroke();
-  } else if (group === "hat") {
+  if (group === "hat") {
     const S = cv.height / 42;
     g.setTransform(S, 0, 0, S, cv.width / 2, cv.height * 0.78);
     withContext(g, () => {
@@ -1112,6 +1108,7 @@ function refreshLook() {
     tabs.appendChild(tab);
   }
   for (const [id, item] of Object.entries(LOOK_GROUPS[lookTab].items)) {
+    if (id === "none") continue;   // "none" is just the unequipped state, tapped off via UNEQUIP
     const owned = look.owned[lookTab].includes(id);
     const equipped = look.equipped[lookTab] === id;
     const card = document.createElement("div");
