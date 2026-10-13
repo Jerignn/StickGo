@@ -2496,7 +2496,44 @@ function drawHero(pts) {
   }
 }
 
+// The yellow scythe stickman: sprite sheets of 128x64 frames, facing right. He's drawn from
+// these while alive; when he's hit the old ragdoll takes over.
+const HERO_SHEETS = {};
+for (const name of ["idle", "run", "jump", "jump_peak", "fall", "attack2", "start_jump", "dash"]) {
+  const img = new Image();
+  img.src = `pictures/hero_${name}.png`;
+  HERO_SHEETS[name] = img;
+}
+const HERO_FRAME_W = 128, HERO_FRAME_H = 64, HERO_SCALE = 1.2;
+
+function heroFrame() {
+  if (!player.onGround) {
+    if (player.vy < -250) return ["jump", Math.min(2, Math.floor((player.vy + 700) / 150))];
+    if (player.vy > 250) return ["fall", Math.floor(performance.now() / 90) % 4];
+    return ["jump_peak", Math.floor(performance.now() / 120) % 3];
+  }
+  if (player.ducking) return ["dash", 4];
+  if (player.attack > 0) {
+    const t = 1 - player.attack / ATTACK_DURATION;
+    return ["attack2", Math.min(7, Math.floor(t * 8))];
+  }
+  if (state === "running") return ["run", Math.floor(player.runPhase / (Math.PI * 2) * 10) % 10];
+  return ["idle", Math.floor(performance.now() / 200) % 4];
+}
+
+function drawHeroSprite() {
+  const [sheet, i] = heroFrame();
+  const img = HERO_SHEETS[sheet];
+  if (!img.complete || !img.naturalWidth) return false;
+  const w = HERO_FRAME_W * HERO_SCALE, h = HERO_FRAME_H * HERO_SCALE;
+  const feet = player.y + player.h + 2;
+  ctx.drawImage(img, Math.max(0, i) * HERO_FRAME_W, 0, HERO_FRAME_W, HERO_FRAME_H,
+                player.x + player.w / 2 - w / 2, feet - h, w, h);
+  return true;
+}
+
 function drawStickman() {
+  if (!ragdoll && drawHeroSprite()) return;
   const pts = ragdoll ? ragdoll.points : getPose();
   drawHero(pts);
   drawSword(pts, !ragdoll && player.attack > 0);
