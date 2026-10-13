@@ -887,6 +887,7 @@ const HATS = {
   halo:     { name: "ANGEL HALO", price: 5000 }
 };
 const SCARVES = {
+  none:   { name: "NO SCARF", price: 0 },
   red:    { name: "RED", price: 0, a: "#e53030", b: "#a31515" },
   blue:   { name: "BLUE", price: 40, a: "#3a7bff", b: "#1f4bb0" },
   green:  { name: "GREEN", price: 40, a: "#3fcf5a", b: "#1f8a35" },
@@ -896,6 +897,7 @@ const SCARVES = {
   rainbow: { name: "RAINBOW", price: 500, rainbow: true }
 };
 const AURAS = {
+  none:   { name: "NO AURA", price: 0 },
   blue:   { name: "BLUE", price: 0, rgb: "70,160,255" },
   red:    { name: "RED", price: 60, rgb: "255,90,70" },
   green:  { name: "GREEN", price: 60, rgb: "80,220,120" },
@@ -914,6 +916,7 @@ const look = Object.assign(
 );
 for (const [group, info] of Object.entries(LOOK_GROUPS)) {   // forget anything that is no longer sold
   look.owned[group] = (look.owned[group] || []).filter((id) => info.items[id]);
+  if (info.items.none && !look.owned[group].includes("none")) look.owned[group].unshift("none");   // "none" is always free
   if (!look.owned[group].length) look.owned[group] = [Object.keys(info.items)[0]];
   if (!look.owned[group].includes(look.equipped[group])) look.equipped[group] = look.owned[group][0];
 }
@@ -1054,7 +1057,11 @@ function drawLookIcon(cv, group, id) {
   g.clearRect(0, 0, cv.width, cv.height);
   const item = LOOK_GROUPS[group].items[id];
   const hue = rainbowHue();
-  if (group === "hat") {
+  if (id === "none" && group !== "hat") {
+    g.strokeStyle = "#8a8a99"; g.lineWidth = 8; g.lineCap = "round";
+    g.beginPath(); g.arc(cv.width / 2, cv.height / 2, 30, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.moveTo(cv.width / 2 - 21, cv.height / 2 + 21); g.lineTo(cv.width / 2 + 21, cv.height / 2 - 21); g.stroke();
+  } else if (group === "hat") {
     const S = cv.height / 42;
     g.setTransform(S, 0, 0, S, cv.width / 2, cv.height * 0.78);
     withContext(g, () => {
@@ -1117,7 +1124,7 @@ function refreshLook() {
     cv.dataset.id = id;
     drawLookIcon(cv, lookTab, id);
     const btn = card.querySelector("button");
-    if (equipped) btn.textContent = lookTab === "hat" && id !== "none" ? "UNEQUIP" : "EQUIPPED";
+    if (equipped) btn.textContent = LOOK_GROUPS[lookTab].items.none && id !== "none" ? "UNEQUIP" : "EQUIPPED";
     else if (owned) btn.textContent = "EQUIP";
     else { btn.innerHTML = `<span class="coin"></span>${fmt(item.price)}`; btn.classList.toggle("cant", totalGold < item.price); }
     btn.addEventListener("click", () => lookTap(lookTab, id));
@@ -1137,10 +1144,10 @@ function lookTap(group, id) {
     sfx.coin();
   }
   // Tapping the worn hat takes it off
-  if (group === "hat" && id !== "none" && look.equipped.hat === id) id = "none";
+  if (id !== "none" && LOOK_GROUPS[group].items.none && look.equipped[group] === id) id = "none";
   look.equipped[group] = id;
   saveLook();
-  lookMessage(id === "none" ? "HAT REMOVED" : `${item.name} EQUIPPED`);
+  lookMessage(id === "none" ? `${LOOK_GROUPS[group].label} REMOVED` : `${item.name} EQUIPPED`);
   refreshLook();
 }
 
@@ -2804,8 +2811,10 @@ function drawHero(pts, down = !!ragdoll) {
   const h = pts.head;
 
   // Rim light (the aura): the same figure, wider and faint, drawn underneath
-  const aura = auraColors();
-  drawFigure(pts, aura.front, aura.back, 8.2, BODY.headR + 2.2);
+  if (look.equipped.aura !== "none") {
+    const aura = auraColors();
+    drawFigure(pts, aura.front, aura.back, 8.2, BODY.headR + 2.2);
+  }
   drawFigure(pts, colors.hero, colors.heroBack, 4.6, BODY.headR);
 
   // Shoes and hands
@@ -2824,7 +2833,7 @@ function drawHero(pts, down = !!ragdoll) {
   const knot = { x: pts.neck.x - 1, y: pts.neck.y + 1 };
   const len = 15 + (speed || 400) * 0.012;
   const scarf = scarfColors();
-  for (const [l, dy, color, ph] of [[len * 1.3, 3, scarf.b, 1.3], [len, 0, scarf.a, 0]]) {
+  for (const [l, dy, color, ph] of look.equipped.scarf === "none" ? [] : [[len * 1.3, 3, scarf.b, 1.3], [len, 0, scarf.a, 0]]) {
     ctx.strokeStyle = color;
     ctx.lineWidth = 3.4;
     ctx.beginPath();
@@ -2837,8 +2846,10 @@ function drawHero(pts, down = !!ragdoll) {
     }
     ctx.stroke();
   }
-  ctx.fillStyle = scarf.a;
-  ctx.beginPath(); ctx.arc(knot.x, knot.y, 3, 0, Math.PI * 2); ctx.fill();
+  if (look.equipped.scarf !== "none") {
+    ctx.fillStyle = scarf.a;
+    ctx.beginPath(); ctx.arc(knot.x, knot.y, 3, 0, Math.PI * 2); ctx.fill();
+  }
 
   // Face: narrowed glowing eyes under a determined brow (he faces right)
   ctx.strokeStyle = colors.sky;
