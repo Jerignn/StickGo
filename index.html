@@ -380,7 +380,6 @@
 
 <div class="menu store-menu" id="invMenu">
   <div class="shop-head"><h1>INVENTORY</h1></div>
-  <canvas id="invHero" width="192" height="192" style="image-rendering: pixelated; width: 144px; height: 144px;"></canvas>
   <div class="shop-row" id="invItems"></div>
   <p id="invMsg"></p>
   <div class="shop-foot">
@@ -821,22 +820,11 @@ function swordCard(id) {
 }
 
 // Keeps the glowing, sparking swords moving while the shop or inventory is open
-function drawInvHero() {
-  const c = document.getElementById("invHero"), g = c.getContext("2d");
-  const st = HS.idle, img = SHEETS[st.sheet];
-  if (!img.complete) return;
-  const f = st.frames[Math.floor(performance.now() / 1000 * st.fps) % st.frames.length];
-  g.imageSmoothingEnabled = false;
-  g.clearRect(0, 0, c.width, c.height);
-  g.drawImage(img, f * FRAME_W + 32, 0, 64, FRAME_H, 0, 0, c.width, c.height);   // 3x, centred on him
-}
-
 function animatePreviews() {
   const open = menus.shop.classList.contains("open") || menus.inventory.classList.contains("open");
   if (!open) { clearInterval(previewTimer); previewTimer = null; return; }
   if (previewTimer) return;
   previewTimer = setInterval(() => {
-    drawInvHero();
     for (const c of document.querySelectorAll("canvas[data-anim]")) {
       drawSwordPreview(c, SWORD_SKINS[c.dataset.anim]);
     }
@@ -2657,10 +2645,32 @@ function drawBlade(g, hand, angle, skin, clock = performance.now() / 1000) {
 // Shop card picture: the sword lying almost flat, with a short handle
 // The picture on a shop / inventory card: his scythe, in the colours and glow of that skin.
 // (The starter one is black, like the one the hero carries.)
+const SCYTHE_IMG = new Image();   // the hero's own scythe, cut out of his sprite (31x40 pixels)
+SCYTHE_IMG.src = "pictures/scythe.png";
+SCYTHE_IMG.onload = () => { if (menus.inventory.classList.contains("open")) refreshInventory(); };
+let scytheRim = null;   // a light copy of the silhouette, so the black pixels stand out on the dark card
+function drawPixelScythe(canvas, g) {
+  if (!scytheRim) {
+    scytheRim = document.createElement("canvas");
+    scytheRim.width = SCYTHE_IMG.width; scytheRim.height = SCYTHE_IMG.height;
+    const r = scytheRim.getContext("2d");
+    r.drawImage(SCYTHE_IMG, 0, 0);
+    r.globalCompositeOperation = "source-in";
+    r.fillStyle = "#9a9ab4";
+    r.fillRect(0, 0, scytheRim.width, scytheRim.height);
+  }
+  const k = Math.floor(canvas.height / (SCYTHE_IMG.height + 2));   // whole-number zoom keeps the pixels square
+  const w = SCYTHE_IMG.width * k, h = SCYTHE_IMG.height * k;
+  const x = Math.round((canvas.width - w) / 2), y = Math.round((canvas.height - h) / 2);
+  g.imageSmoothingEnabled = false;
+  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) g.drawImage(scytheRim, x + dx * k, y + dy * k, w, h);
+  g.drawImage(SCYTHE_IMG, x, y, w, h);
+}
 function drawSwordPreview(canvas, skin) {
   const g = canvas.getContext("2d");
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, canvas.width, canvas.height);
+  if (!skin.blade && SCYTHE_IMG.complete && SCYTHE_IMG.naturalWidth) { drawPixelScythe(canvas, g); return; }
   const scale = canvas.width / 44;   // 44 units across, ~17 down
   g.setTransform(scale, 0, 0, scale, 0, 0);
   const clock = performance.now() / 1000;
