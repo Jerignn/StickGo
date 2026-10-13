@@ -68,6 +68,88 @@ def weapon_at(d, hand, ang, ln, width=2):
     return tip
 
 
+STEEL, STEEL_D, GOLD = (206, 214, 228, 255), (132, 144, 164, 255), (226, 176, 56, 255)
+WOOD, WOOD_D = (140, 94, 48, 255), (88, 58, 30, 255)
+
+
+def wpoly(d, hand, ang, pts, fill, outline=BLACK):
+    """A polygon in weapon space: x runs along the weapon from the hand, y across it."""
+    s_, c_ = math.sin(ang), math.cos(ang)
+    world = [(hand[0] + s_ * lx + c_ * ly, hand[1] + c_ * lx - s_ * ly) for lx, ly in pts]
+    d.polygon([(round(x), round(y)) for x, y in world], fill=fill, outline=outline)
+
+
+def draw_sword(d, hand, ang, length=19, thick=1.8):
+    wpoly(d, hand, ang, [(-5, -1.3), (3, -1.3), (3, 1.3), (-5, 1.3)], WOOD_D)                      # grip
+    wpoly(d, hand, ang, [(-7, -2), (-5, -2), (-5, 2), (-7, 2)], GOLD)                               # pommel
+    wpoly(d, hand, ang, [(3, -4.5), (5, -4.5), (5, 4.5), (3, 4.5)], GOLD)                           # cross guard
+    wpoly(d, hand, ang, [(5, -thick), (length, -thick), (length + 3, 0), (length, thick), (5, thick)], STEEL)   # blade
+    wpoly(d, hand, ang, [(5.5, -0.3), (length, -0.3), (length + 1, 0), (length, 0.3), (5.5, 0.3)], STEEL_D, STEEL_D)  # fuller
+
+
+def draw_katana(d, hand, ang):
+    wpoly(d, hand, ang, [(-8, -1.4), (4, -1.4), (4, 1.4), (-8, 1.4)], (40, 44, 72, 255))             # wrapped grip
+    for lx in (-6, -3, 0):
+        wpoly(d, hand, ang, [(lx, -1.4), (lx + 1, -1.4), (lx + 1, 1.4), (lx, 1.4)], (200, 40, 40, 255), None)
+    wpoly(d, hand, ang, [(4, -3.6), (5.6, -3.6), (5.6, 3.6), (4, 3.6)], BLACK)                       # guard
+    wpoly(d, hand, ang, [(5.6, -1.1), (27, -1.1), (32, 0), (27, 0.8), (5.6, 1.1)], (226, 234, 248, 255))  # long, thin blade
+
+
+def draw_club(d, hand, ang, big=False):
+    r = 6 if big else 4.5
+    wpoly(d, hand, ang, [(-3, -1.6), (12, -2.2), (19, -r), (25, -r), (27, 0), (25, r), (19, r), (12, 2.2), (-3, 1.6)], WOOD)
+    wpoly(d, hand, ang, [(12, -2.2), (14, -2.4), (14, 2.4), (12, 2.2)], WOOD_D, None)                  # iron band
+    for lx in (20.5, 24):                                                                                # studs
+        for side in (-1, 1):
+            wpoly(d, hand, ang, [(lx - 1.5, side * r), (lx, side * (r + 3.5)), (lx + 1.5, side * r)], STEEL)
+    wpoly(d, hand, ang, [(26, -1), (30, 0), (26, 1)], STEEL)                                           # tip spike
+
+
+def draw_axe(d, hand, ang):
+    wpoly(d, hand, ang, [(-8, -1.6), (30, -1.6), (30, 1.6), (-8, 1.6)], WOOD)                          # long haft
+    wpoly(d, hand, ang, [(21, -1.6), (19, -13), (28, -15), (35, -8), (33, -2), (28, 0)], STEEL)        # blade
+    wpoly(d, hand, ang, [(24, -3), (24, -12), (30, -11), (31, -6)], STEEL_D, None)                     # edge shading
+    wpoly(d, hand, ang, [(22, 1.6), (21, 8), (28, 3)], STEEL)                                          # back spike
+    wpoly(d, hand, ang, [(30, -1.6), (34, 0), (30, 1.6)], STEEL)
+
+
+def draw_claws(d, hand, ang):
+    for k in (-1, 0, 1):
+        wpoly(d, hand, ang, [(0, k * 3 - 1.2), (9, k * 3.4 - 2), (16, k * 4 + 2), (10, k * 3.4 + 0.4), (0, k * 3 + 1.2)],
+              (236, 252, 255, 255), (120, 190, 235, 255))
+
+
+def draw_shield(d, c):
+    d.ellipse([c[0] - 7, c[1] - 13, c[0] + 7, c[1] + 13], fill=STEEL_D, outline=BLACK)
+    d.ellipse([c[0] - 4, c[1] - 10, c[0] + 4, c[1] + 10], fill=STEEL, outline=None)
+    d.ellipse([c[0] - 2, c[1] - 2, c[0] + 2, c[1] + 2], fill=GOLD, outline=BLACK)
+
+
+def draw_bow(d, hand, hb, pull):
+    c = (hand[0] + 3, hand[1])
+    arc = [(c[0] + 9 * math.cos(a) - 3, c[1] + 15 * math.sin(a)) for a in [(-1.25 + 2.5 * i / 10) for i in range(11)]]
+    stroke(d, arc, WOOD_D, 4)
+    stroke(d, arc, WOOD, 2)
+    top, bot = arc[0], arc[-1]
+    nock = hb if pull > 0.05 else (c[0] - 4, c[1])
+    d.line([top, nock, bot], fill=(236, 236, 226, 255), width=1)
+    if pull > 0.05:   # an arrow drawn back on the string
+        tip = (c[0] + 11, c[1])
+        d.line([nock, tip], fill=WOOD_D, width=1)
+        d.polygon([(round(tip[0]) + 4, round(tip[1])), (round(tip[0]) - 1, round(tip[1]) - 3), (round(tip[0]) - 1, round(tip[1]) + 3)], fill=STEEL, outline=BLACK)
+        d.line([(nock[0], nock[1] - 2), (nock[0] + 3, nock[1])], fill=(210, 60, 60, 255), width=1)
+        d.line([(nock[0], nock[1] + 2), (nock[0] + 3, nock[1])], fill=(210, 60, 60, 255), width=1)
+
+
+def draw_bomb(d, b):
+    circle(d, b, 5, BLACK)
+    circle(d, b, 4, (52, 54, 66, 255))
+    d.point([(round(b[0]) - 2, round(b[1]) - 2)], fill=(150, 156, 176, 255))                             # highlight
+    d.line([(round(b[0]) + 1, round(b[1]) - 5), (round(b[0]) + 4, round(b[1]) - 8)], fill=(150, 112, 60, 255), width=1)   # fuse
+    d.point([(round(b[0]) + 5, round(b[1]) - 9), (round(b[0]) + 4, round(b[1]) - 9)], fill=(255, 190, 50, 255))
+    d.point([(round(b[0]) + 5, round(b[1]) - 10)], fill=(255, 240, 160, 255))
+
+
 def draw_figure(kind, p, extra=None):
     """One frame. `extra` is a dict of per-frame details (weapon, bow, bomb...)."""
     k = KINDS[kind]
@@ -80,12 +162,8 @@ def draw_figure(kind, p, extra=None):
     # far side first
     stroke(d, [p["hip"], p["kneeB"], p["footB"]], shade, w)
     stroke(d, [p["shoulder"], p["elbowB"], p["handB"]], shade, w)
-    if extra.get("shield"):   # a round shield held out in front on the far arm
-        c = (p["handB"][0] + 4, p["handB"][1] - 2)
-        d.ellipse([c[0] - 6, c[1] - 12, c[0] + 6, c[1] + 12], fill=(205, 212, 224, 255), outline=BLACK)
-        circle(d, c, 2, BLACK)
-    if extra.get("bandolier"):
-        pass
+    if extra.get("shield"):   # held out in front on the far arm
+        draw_shield(d, (p["handB"][0] + 5, p["handB"][1] - 3))
     stroke(d, [p["neck"], p["shoulder"], p["hip"]], body, w)
     stroke(d, [p["hip"], p["kneeF"], p["footF"]], body, w)
     stroke(d, [p["shoulder"], p["elbowF"], p["handF"]], body, w)
@@ -105,39 +183,24 @@ def draw_figure(kind, p, extra=None):
     if kind == "boss":
         for s in (-1, 1):
             d.polygon([(hx + s * 5, hy - 5), (hx + s * 12, hy - 15), (hx + s * 9, hy - 2)], fill=(236, 228, 200, 255))
-    # eyes: two angry dots on the face side (he faces right)
-    ec = (255, 255, 255, 255) if kind != "ghost" else (40, 70, 110, 255)
-    d.point([(round(hx + 2), round(hy - 1)), (round(hx + 4), round(hy - 1))], fill=ec)
-    if kind in ("grunt", "ninja", "brute", "boss", "archer", "bomber", "guard"):
-        d.line([(round(hx + 1), round(hy - 3)), (round(hx + 5), round(hy - 2))], fill=BLACK, width=1)
     # weapon in the front hand
     hand, fa = p["handF"], p["fa" + "F"]
-    wp = extra.get("weapon")
+    wp, ang = extra.get("weapon"), p["faF"] + extra.get("wa", 0.3)
     if wp == "sword":
-        weapon_at(d, hand, fa + extra.get("wa", 0.3), 14)
+        draw_sword(d, hand, ang, 24 if kind == "guard" else 19, 2.2 if kind == "guard" else 1.8)
     elif wp == "club":
-        tip = weapon_at(d, hand, fa + extra.get("wa", 0.3), 17, 3 if kind == "grunt" else 4)
-        circle(d, tip, 4 if kind == "brute" else 6, (110, 74, 40, 255))
+        if kind == "boss":
+            draw_axe(d, hand, ang)
+        else:
+            draw_club(d, hand, ang, big=kind == "brute")
     elif wp == "katana":
-        weapon_at(d, hand, fa + extra.get("wa", 0.3), 17)
+        draw_katana(d, hand, ang)
     elif wp == "claw":
-        for off in (-0.25, 0, 0.25):
-            weapon_at(d, hand, fa + off, 5, 1)
+        draw_claws(d, hand, p["faF"])
     elif wp == "bow":
-        pull = extra.get("pull", 0)
-        c = (hand[0] + 2, hand[1])
-        pts = [(c[0] + 8 * math.cos(a), c[1] + 13 * math.sin(a)) for a in [(-1.2 + 2.4 * i / 8) for i in range(9)]]
-        stroke(d, pts, (120, 80, 36, 255), 2)
-        hb = p["handB"]
-        top, bot = pts[0], pts[-1]
-        d.line([top, hb if pull > 0.05 else (c[0] - 1, c[1]), bot], fill=BLACK, width=1)
-        if pull > 0.05:
-            d.line([hb, (c[0] + 8, c[1])], fill=BLACK, width=1)
+        draw_bow(d, hand, p["handB"], extra.get("pull", 0))
     if extra.get("bomb"):
-        b = (p["handF"][0] + 1, p["handF"][1] - 5)
-        circle(d, b, 4, (30, 30, 30, 255))
-        d.point([(round(b[0] + 3), round(b[1] - 5))], fill=(255, 176, 46, 255))
-        d.line([(round(b[0] + 1), round(b[1] - 4)), (round(b[0] + 3), round(b[1] - 6))], fill=(160, 160, 160, 255), width=1)
+        draw_bomb(d, (p["handF"][0] + 1, p["handF"][1] - 6))
     if "alpha" in k:
         px = img.load()
         for y in range(H):
@@ -216,7 +279,7 @@ def attack_frames(kind):
         legs = [[1.0, 0.9], [-0.7, 0.2]] if i >= 3 else ([[0.9, 1.5], [-0.5, 1.4]] if crouch else [[0.3, 0.3], [-0.3, 0.2]])
         arms = [[up, elbow], [0.8, 1.0]]
         p = make_pose(lean, legs, arms)
-        out.append(draw_figure(kind, p, held(kind, wa=0.2 if i < 3 else 0.5)))
+        out.append(draw_figure(kind, p, held(kind, wa=[1.6, 1.4, 1.1, 0.5, 0.5, 0.6][i])))   # raised behind the head, then forward
     return out
 
 
