@@ -51,8 +51,24 @@
   /* Right thumb: jump and attack side by side, dash above them */
   #jumpBtn { right: 4vw; font-size: 22px; }
   #attackBtn { right: calc(7vw + max(var(--btn-size), 64px)); font-size: 14px; }
-  #dashBtn { right: 4vw; bottom: calc(10vh + max(var(--btn-size), 64px)); font-size: 30px; }
-  #dashBtn.cooling { opacity: 0.35; }
+  /* Dash and skills 1-3: a row of smaller buttons above attack and jump */
+  #skillRow {
+    position: fixed;
+    right: 4vw;
+    bottom: calc(10vh + max(var(--btn-size), 64px));
+    display: flex;
+    gap: 1.6vw;
+  }
+  .btn.small {
+    position: relative;
+    bottom: auto;
+    width: calc(var(--btn-size) * 0.72);
+    height: calc(var(--btn-size) * 0.72);
+    min-width: 50px;
+    min-height: 50px;
+    font-size: 24px;
+  }
+  .btn.cooling { opacity: 0.35; }
   /* A small caption under a button says what it does; it fades out a few seconds into the run */
   .btn[data-cap]::after {
     content: attr(data-cap);
@@ -85,6 +101,7 @@
   }
   body.show-hint #keyHint { opacity: 0.9; transition: opacity 0.2s; }
   @media (hover: none), (pointer: coarse) { #keyHint { display: none; } }
+  body:not(.playing) #skillRow { display: none; }
   /* Hide the buttons on computers with a mouse; keyboard is used there */
   @media (hover: hover) and (pointer: fine) {
     .btn { display: none; }
@@ -325,9 +342,14 @@
 <div class="btn" id="leftBtn" data-cap="WALK">&#9664;</div>
 <div class="btn" id="rightBtn" data-cap="WALK">&#9654;</div>
 <div class="btn" id="jumpBtn" data-cap="JUMP">&#9650;</div>
-<div class="btn" id="attackBtn">ATTACK</div>
-<div class="btn" id="dashBtn" data-cap="DASH">&raquo;</div>
-<div id="keyHint">A / D  WALK &nbsp;&middot;&nbsp; W  JUMP &nbsp;&middot;&nbsp; SPACE  ATTACK &nbsp;&middot;&nbsp; SHIFT  DASH</div>
+<div class="btn" id="attackBtn" data-cap="COMBO">ATTACK</div>
+<div id="skillRow">
+  <div class="btn small" id="dashBtn" data-cap="DASH">&raquo;</div>
+  <div class="btn small" id="sk1Btn" data-cap="SLAM">1</div>
+  <div class="btn small" id="sk2Btn" data-cap="SPIN">2</div>
+  <div class="btn small" id="sk3Btn" data-cap="ULTIMATE">3</div>
+</div>
+<div id="keyHint">A / D  WALK &nbsp;&middot;&nbsp; W  JUMP &nbsp;&middot;&nbsp; SPACE  ATTACK x3 &nbsp;&middot;&nbsp; SHIFT  DASH &nbsp;&middot;&nbsp; 1 2 3  SKILLS</div>
 <div id="pauseBtn" aria-label="Pause"><span></span><span></span></div>
 
 <div class="menu" id="mainMenu">
@@ -596,7 +618,17 @@ const player = {
   dash: 0,                   // time left in the current dash
   dashDir: 1,
   dashCooldown: 0,
-  landT: 0,                  // time left in the landing crouch
+  act: null,                 // the attack or skill being played (see COMBO / SKILLS)
+  actT: 0,
+  fired: [],
+  buffered: false,           // another attack was pressed during a combo swing
+  lungeV: 0,
+  combo: 0,                  // which swing of the 3-hit combo comes next
+  comboTimer: 0,
+  cd: [0, 0, 0],             // cooldowns of skills 1, 2 and 3
+  stun: 0,                   // time left flinching after a hit
+  inv: 0,                    // time left where nothing can hurt him (dash, skills)
+  runT: 0,
   moving: false,
   hp: 100,
   hurt: 0,                   // time left before he can be hurt again
@@ -618,7 +650,10 @@ function reset() {
   foes = [];
   portals = [];
   ghosts = [];
-  ghostTimer = jumpBuffer = hintTimer = 0;
+  arrows = []; bombs = []; blasts = []; shocks = [];
+  ghostTimer = hintTimer = dyingT = 0;
+  heroFlash = null;
+  for (const k of Object.keys(queued)) queued[k] = 0;
   document.body.classList.remove("show-hint");
   kills = 0;
   waveToSpawn = waveTotal = 0;
@@ -636,9 +671,14 @@ function reset() {
   player.hurt = 0;
   player.dash = 0;
   player.dashCooldown = 0;
-  player.landT = 0;
-  player.attack = 0;
-  player.attackCooldown = 0;
+  player.act = null;
+  player.actT = 0;
+  player.combo = 0;
+  player.comboTimer = 0;
+  player.cd = [0, 0, 0];
+  player.stun = 0;
+  player.inv = 0;
+  player.lungeV = 0;
   coins = [];
   corpses = [];
   runGold = 0;
@@ -1370,56 +1410,54 @@ const sfx = {
   dash: () => beep(300, 0.18, { type: "sawtooth", vol: 0.05, slideTo: 900 }),
   chest: () => { [660, 880, 1100, 1320].forEach((f, i) => beep(f, 0.12, { vol: 0.045, delay: i * 0.07 })); },
   slam: () => beep(90, 0.3, { vol: 0.1, slideTo: 40 }),
+  skill: () => beep(160, 0.3, { type: "sawtooth", vol: 0.08, slideTo: 420 }),
   boss: () => { beep(110, 0.4, { type: "sawtooth", vol: 0.08 }); beep(82, 0.6, { type: "sawtooth", vol: 0.08, delay: 0.3 }); }
 };
 
 // --- Input ---
-// Computer: A / D (or the arrow keys) walk, SPACE / X / F / J attack.
-// Phone: the left and right arrow buttons walk, ATTACK swings the sword.
+// Computer: A / D (or the arrow keys) walk, W jumps, SPACE / X / F / J attack (press again to chain
+// the 3-hit combo), SHIFT or K dashes, 1 / 2 / 3 (or U / I / O) use skills 1, 2 and 3.
+// Phone: the left and right arrow buttons walk, and the buttons on the right do the rest.
 const held = { left: false, right: false };        // keyboard
 const touchHeld = { left: false, right: false };   // on-screen buttons
 const MOVE_KEYS = { KeyA: "left", ArrowLeft: "left", KeyD: "right", ArrowRight: "right" };
 const ATTACK_KEYS = ["Space", "KeyX", "KeyF", "KeyJ"];
 const JUMP_KEYS = ["KeyW", "ArrowUp"];
 const DASH_KEYS = ["ShiftLeft", "ShiftRight", "KeyK", "KeyL"];
+const SKILL_KEYS = { Digit1: "s1", Numpad1: "s1", KeyU: "s1", Digit2: "s2", Numpad2: "s2", KeyI: "s2",
+                     Digit3: "s3", Numpad3: "s3", KeyO: "s3" };
 
 const leftBtn = document.getElementById("leftBtn");
 const rightBtn = document.getElementById("rightBtn");
 const attackBtn = document.getElementById("attackBtn");
 const jumpBtn = document.getElementById("jumpBtn");
 const dashBtn = document.getElementById("dashBtn");
+const sk1Btn = document.getElementById("sk1Btn");
+const sk2Btn = document.getElementById("sk2Btn");
+const sk3Btn = document.getElementById("sk3Btn");
 const pauseBtn = document.getElementById("pauseBtn");
 
 function releaseInput() {
   held.left = held.right = touchHeld.left = touchHeld.right = false;
-  leftBtn.classList.remove("pressed");
-  rightBtn.classList.remove("pressed");
-  attackBtn.classList.remove("pressed");
-  jumpBtn.classList.remove("pressed");
-  dashBtn.classList.remove("pressed");
+  for (const b of [leftBtn, rightBtn, attackBtn, jumpBtn, dashBtn, sk1Btn, sk2Btn, sk3Btn]) b.classList.remove("pressed");
 }
 
-function jump() {
-  if (state === "running") jumpBuffer = JUMP_BUFFER;
+// Presses are remembered for a moment (see update), so tapping just early still counts
+function press(name) {
+  if (state === "running") queued[name] = 0.22;
 }
 
 // Dash: a quick burst the way he's walking (or facing). He can't be hurt while it lasts.
 function dash() {
-  if (state !== "running" || player.dash > 0 || player.dashCooldown > 0) return;
+  if (state !== "running" || player.dash > 0 || player.dashCooldown > 0 || player.stun > 0) return;
+  if (player.act && player.act.skill) return;   // skills can't be cut short
+  player.act = null;
   player.dash = DASH_TIME;
+  player.inv = DASH_TIME + 0.05;
   player.dashCooldown = DASH_COOLDOWN;
   player.dashDir = inputDir() || player.facing;
   player.facing = player.dashDir;
-  player.attack = 0;
   sfx.dash();
-}
-
-function attack() {
-  if (state !== "running" || player.attackCooldown > 0 || player.dash > 0) return;
-  player.attack = ATTACK_DURATION;
-  player.attackCooldown = ATTACK_DURATION + ATTACK_COOLDOWN;
-  player.swingId++;
-  sfx.slash();
 }
 
 document.addEventListener("keydown", (e) => {
@@ -1434,17 +1472,21 @@ document.addEventListener("keydown", (e) => {
   }
   if (JUMP_KEYS.includes(e.code)) {
     e.preventDefault();
-    jump();
+    press("jump");
   }
   if (DASH_KEYS.includes(e.code) && !e.repeat) {
     e.preventDefault();
     dash();
   }
+  if (SKILL_KEYS[e.code] && !e.repeat) {
+    e.preventDefault();
+    press(SKILL_KEYS[e.code]);
+  }
   if (ATTACK_KEYS.includes(e.code)) {
     e.preventDefault();
     if (state === "ready" && menus.main.classList.contains("open")) startGame();
     else if (state === "over") startGame();
-    else attack();
+    else if (!e.repeat) press("attack");
   }
 });
 
@@ -1458,7 +1500,7 @@ pauseBtn.addEventListener("pointerdown", (e) => {
   pauseGame();
 });
 
-// A button stays "held" until the finger lifts, even if it slides off the button
+// A walk button stays "held" until the finger lifts, even if it slides off the button
 function holdButton(btn, dir) {
   btn.addEventListener("pointerdown", (e) => {
     e.preventDefault();
@@ -1476,15 +1518,8 @@ function holdButton(btn, dir) {
 holdButton(leftBtn, "left");
 holdButton(rightBtn, "right");
 
-attackBtn.addEventListener("pointerdown", (e) => {
-  e.preventDefault();
-  attackBtn.classList.add("pressed");
-  attack();
-});
-for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
-  attackBtn.addEventListener(ev, () => attackBtn.classList.remove("pressed"));
-}
-for (const [btn, action] of [[jumpBtn, jump], [dashBtn, dash]]) {
+for (const [btn, action] of [[attackBtn, () => press("attack")], [jumpBtn, () => press("jump")], [dashBtn, dash],
+    [sk1Btn, () => press("s1")], [sk2Btn, () => press("s2")], [sk3Btn, () => press("s3")]]) {
   btn.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     btn.classList.add("pressed");
@@ -1523,27 +1558,78 @@ function dropGold(x, y, count, popupY = y - 26) {
   }
 }
 
+// --- The hero: yellow stickman sprite sheets (128x64 frames, facing right) ---
+const SHEET_FRAMES = { idle: 4, run: 10, jump: 3, jump_peak: 3, fall: 4, dash: 11,
+  attack1: 10, attack2: 8, attack3: 10, skill1: 9, skill2: 19, skill3: 25, start_skill3: 3, hit1: 3, hit3: 3 };
+const SHEETS = {};
+for (const name of Object.keys(SHEET_FRAMES)) {
+  const img = new Image();
+  img.src = `pictures/hero_${name}.png`;
+  SHEETS[name] = img;
+}
+const FRAME_W = 128, FRAME_H = 64, SC = 1.5;   // drawn 1.5x so he stands about 60 units tall
+
+// An action is a list of sheets played one after the other (parts) and hits that land when
+// the animation reaches a frame. front/back = how far the hit reaches ahead of and behind him,
+// kb = how far it shoves what it hits. prep() works out the timings.
+function prep(spec) {
+  let t = 0;
+  spec.partStart = spec.parts.map((p) => { const s = t; t += SHEET_FRAMES[p.sheet] / p.fps; return s; });
+  spec.total = t;
+  spec.hitT = spec.hits.map((h) => spec.partStart[h.part || 0] + h.frame / spec.parts[h.part || 0].fps);
+  return spec;
+}
+function actFrame(spec, t) {
+  let i = spec.parts.length - 1;
+  while (i > 0 && t < spec.partStart[i]) i--;
+  const p = spec.parts[i];
+  return { sheet: p.sheet, frame: Math.min(SHEET_FRAMES[p.sheet] - 1, Math.floor((t - spec.partStart[i]) * p.fps)) };
+}
+
+// Basic attack 1 - 2 - 3: press again during a swing to chain into the next one
+const COMBO = [
+  { basic: true, parts: [{ sheet: "attack1", fps: 26 }], hits: [{ frame: 3, dmg: 14, front: 82, back: 8, kb: 34 }], lunge: 70 },
+  { basic: true, parts: [{ sheet: "attack2", fps: 26 }], hits: [{ frame: 1, dmg: 14, front: 82, back: 8, kb: 34 }], lunge: 70 },
+  { basic: true, parts: [{ sheet: "attack3", fps: 24 }], hits: [{ frame: 2, dmg: 26, front: 96, back: 30, kb: 60 }], lunge: 50 }
+].map(prep);
+// Skills 1 - 2 - 3, each with its own cooldown (s)
+const SKILLS = [
+  { skill: true, label: "SLAM", cd: 4, parts: [{ sheet: "skill1", fps: 13 }],
+    hits: [{ frame: 4, dmg: 42, front: 165, back: 0, kb: 90 }] },
+  { skill: true, label: "SPIN", cd: 8, invuln: true, parts: [{ sheet: "skill2", fps: 22 }],
+    hits: [2, 4, 6, 8].map((frame) => ({ frame, dmg: 16, front: 130, back: 130, kb: 26 })) },
+  { skill: true, label: "ULTIMATE", cd: 18, invuln: true,
+    parts: [{ sheet: "start_skill3", fps: 8 }, { sheet: "skill3", fps: 15 }],
+    hits: [{ part: 1, frame: 16, dmg: 130, front: 2000, back: 2000, kb: 0, screen: true }] }
+].map(prep);
+
 // --- Arena ---
-// The hero walks left and right across a fixed stage while waves of enemies walk in from both
-// edges. His sword hits whatever is in front of him; enemies wind up (you can see the arm go up)
-// and then strike if he's still close, so stepping away dodges.
+// The hero walks left and right across a fixed stage while waves of enemies step out of portals
+// at both edges. Enemies each have a trick of their own; every wave 5 a boss shows up.
 const PLAYER_SPEED = 230;      // px/s
 const PLAYER_MAX_HP = 100;
 const HURT_TIME = 0.9;         // s he can't be hurt again after a hit
-const REACH = 64;              // how far in front of him the sword reaches
 const DIFF_MUL = { easy: 0.8, normal: 1, hard: 1.25 };   // enemy speed and spawn rate
-// reach = how close an enemy gets before it swings; pts = score for a kill
+// stand = how close it gets before it acts; dmg = damage to the hero; pts = score for a kill
 const FOES = {
-  grunt: { look: null,    scale: 0, w: 26, h: 60, hp: 1, speed: 110, dmg: 10, windup: 0.5,  gold: [1, 3],  pts: 10, reach: 40 },
-  ninja: { look: "ninja", scale: 0, w: 26, h: 60, hp: 1, speed: 190, dmg: 12, windup: 0.3,  gold: [2, 4],  pts: 15, reach: 40 },
-  brute: { look: "brute", scale: 1.6, w: 42, h: 96, hp: 3, speed: 65, dmg: 25, windup: 0.75, gold: [8, 10], pts: 40, reach: 56 }
+  grunt:  { look: null,      scale: 0,   w: 26, h: 60,  hp: 30,  speed: 110, dmg: 10, stand: 40,  windup: 0.5,  rec: 0.5, gold: [1, 3],   pts: 10 },
+  ninja:  { look: "ninja",   scale: 0,   w: 26, h: 60,  hp: 22,  speed: 150, dmg: 14, stand: 260, windup: 0.55, rec: 0.9, gold: [2, 4],   pts: 15 },
+  guard:  { look: null,      scale: 0,   w: 26, h: 60,  hp: 50,  speed: 75,  dmg: 14, stand: 40,  windup: 0.55, rec: 0.6, gold: [4, 6],   pts: 25, shield: true },
+  brute:  { look: "brute",   scale: 1.6, w: 42, h: 96,  hp: 90,  speed: 65,  dmg: 22, stand: 150, windup: 0.85, rec: 0.9, gold: [8, 10],  pts: 40 },
+  archer: { look: "archer",  scale: 0,   w: 26, h: 60,  hp: 20,  speed: 90,  dmg: 12, stand: 330, windup: 0.7,  rec: 1.2, gold: [3, 5],   pts: 20 },
+  bomber: { look: "bomber",  scale: 0,   w: 26, h: 60,  hp: 20,  speed: 80,  dmg: 20, stand: 280, windup: 0.8,  rec: 1.6, gold: [3, 5],   pts: 20 },
+  ghost:  { look: "phantom", scale: 0,   w: 26, h: 60,  hp: 26,  speed: 100, dmg: 14, stand: 40,  windup: 0.5,  rec: 0.5, gold: [4, 6],   pts: 25 },
+  boss:   { look: "brute",   scale: 2.1, w: 52, h: 126, hp: 320, speed: 60,  dmg: 28, stand: 190, windup: 0.9,  rec: 1.0, gold: [60, 60], pts: 200 }
 };
+const SHOOTERS = new Set(["archer", "bomber"]);   // never more than two at a time
 let foes = [];                 // enemies on the field
 let portals = [];              // purple gates the enemies step out of
+let arrows = [], bombs = [], blasts = [], shocks = [];   // enemy attacks in flight
 let ghosts = [];               // fading afterimages left by a dash
-let ghostTimer = 0, jumpBuffer = 0, hintTimer = 0;
 let kills = 0;
-let waveToSpawn = 0, waveTotal = 0, waveClearTimer = -1;
+let waveToSpawn = 0, waveTotal = 0, waveClearTimer = -1, bossDue = false;
+let ghostTimer = 0, hintTimer = 0, dyingT = 0, heroFlash = null;
+const queued = { attack: 0, s1: 0, s2: 0, s3: 0, jump: 0 };   // presses are remembered briefly (seconds left)
 
 function inputDir() {
   return (held.right || touchHeld.right ? 1 : 0) - (held.left || touchHeld.left ? 1 : 0);
@@ -1552,20 +1638,34 @@ function inputDir() {
 function startWave(n) {
   wave = n;
   waveBanner = 2.2;
-  waveToSpawn = waveTotal = Math.min(30, 4 + n * 2);
+  bossDue = n % 5 === 0;
+  waveToSpawn = waveTotal = Math.min(30, 4 + n * 2) + (bossDue ? 1 : 0);
   spawnTimer = 1.2;
   waveClearTimer = -1;
   sfx.wave();
 }
 
+function pickKind() {
+  if (bossDue) { bossDue = false; return "boss"; }
+  const shooters = foes.filter((o) => SHOOTERS.has(o.kind)).length + portals.filter((p) => SHOOTERS.has(p.kind)).length;
+  const table = [
+    ["grunt", 10],
+    ["ninja", wave >= 2 ? 3 + wave * 0.5 : 0],
+    ["guard", wave >= 3 ? 2 + wave * 0.4 : 0],
+    ["brute", wave >= 3 ? 1.5 + wave * 0.3 : 0],
+    ["archer", wave >= 3 && shooters < 2 ? 2 + wave * 0.3 : 0],
+    ["bomber", wave >= 4 && shooters < 2 ? 1.5 + wave * 0.3 : 0],
+    ["ghost", wave >= 5 ? 1.5 + wave * 0.25 : 0]
+  ];
+  let r = Math.random() * table.reduce((sum, e) => sum + e[1], 0);
+  for (const [kind, weight] of table) { if ((r -= weight) < 0) return kind; }
+  return "grunt";
+}
+
 // A portal opens at one of the two edges; half a second later an enemy steps out of it
 function openPortal() {
-  const pBrute = wave >= 3 ? Math.min(0.22, 0.05 + 0.03 * wave) : 0;
-  const pNinja = wave >= 2 ? Math.min(0.4, 0.1 + 0.05 * wave) : 0;
-  const r = Math.random();
-  const kind = r < pBrute ? "brute" : r < pBrute + pNinja ? "ninja" : "grunt";
   const fromLeft = Math.random() < 0.5;
-  portals.push({ x: fromLeft ? 52 : W - 52, fromLeft, kind, t: 0, spawned: false });
+  portals.push({ x: fromLeft ? 52 : W - 52, fromLeft, kind: pickKind(), t: 0, spawned: false });
   sfx.warn();
 }
 
@@ -1575,130 +1675,294 @@ function spawnFoe(portal) {
   burst(portal.x, GROUND_Y - 40, 10, "#b27bff", 200);
   foes.push(person({
     type: kind, kind, look: d.look, scale: d.scale || undefined, age: 0,
-    x: portal.x - d.w / 2, y: GROUND_Y - d.h, w: d.w, h: d.h,
-    hp: d.hp, maxHp: d.hp, reach: d.reach, speed: d.speed * DIFF_MUL[runDiff] * (0.9 + Math.random() * 0.2),
-    dir: fromLeft ? 1 : -1, ai: "walk", timer: 0, stagger: 0, flash: 0
+    x: portal.x - d.w / 2, y: GROUND_Y - d.h, w: d.w, h: d.h, shield: !!d.shield,
+    hp: d.hp, maxHp: d.hp, stand: d.stand, speed: d.speed * DIFF_MUL[runDiff] * (0.9 + Math.random() * 0.2),
+    dir: fromLeft ? 1 : -1, ai: "walk", timer: 0, stagger: 0, flash: 0, turn: 0, phaseT: Math.random() * 2, solid: true
   }));
+  if (kind === "boss") {
+    bossBanner = { title: "THE WARLORD", sub: "HE CHARGES AND SLAMS", t: 2.4 };
+    sfx.boss();
+  }
 }
 
+// --- Enemy behaviour ---
 function updateFoes(dt) {
   const pcx = player.x + player.w / 2;
   for (const o of foes) {
-    const ocx = o.x + o.w / 2, dx = pcx - ocx;
+    const d = FOES[o.kind];
+    const ocx = o.x + o.w / 2, dx = pcx - ocx, dist = Math.abs(dx), toward = dx >= 0 ? 1 : -1;
     o.stagger = Math.max(0, o.stagger - dt);
     o.flash = Math.max(0, o.flash - dt);
     o.age += dt;
     o.timer += dt;
-    if (o.ai === "walk") {
-      o.dir = dx >= 0 ? 1 : -1;
-      if (o.stagger > 0) continue;
-      if (Math.abs(dx) > o.reach) {
-        // Don't walk through a mate who is already closer to the hero on the same side
-        const blocked = foes.some((p) => p !== o && (p.x + p.w / 2 - pcx) * (ocx - pcx) > 0 &&
-          Math.abs(p.x + p.w / 2 - pcx) < Math.abs(dx) && Math.abs(p.x - o.x) < o.w);
-        if (!blocked) {
-          o.x += o.dir * o.speed * dt;
-          o.runPhase += dt * (o.speed + 120) / 24;
+    if (o.kind === "ghost") { o.phaseT += dt; o.solid = o.phaseT % 1.9 < 1.1; }   // flickers in and out
+    o.windup = o.ai === "throw" ? 1 : 0;           // read by the bomber's pose
+    o.holding = o.kind === "bomber" && (o.ai === "throw" || o.ai === "walk");
+
+    switch (o.ai) {
+      case "walk": {
+        if (o.stagger > 0) break;
+        if (o.shield) {   // a guard turns slowly: that's the moment to hit him from behind
+          if (toward !== o.dir) { o.turn += dt; if (o.turn >= 0.7) { o.dir = toward; o.turn = 0; } } else o.turn = 0;
+        } else o.dir = toward;
+        if (dist > o.stand) {
+          // Don't walk through a mate who is already closer to the hero on the same side
+          const blocked = foes.some((p) => p !== o && (p.x + p.w / 2 - pcx) * (ocx - pcx) > 0 &&
+            Math.abs(p.x + p.w / 2 - pcx) < dist && Math.abs(p.x - o.x) < o.w);
+          if (!blocked) {
+            o.x += o.dir * o.speed * dt;
+            o.runPhase += dt * (o.speed + 120) / 24;
+          }
+        } else {
+          o.timer = 0;
+          if (o.kind === "ninja" || (o.kind === "boss" && Math.random() < 0.5)) o.ai = "warn";
+          else if (o.kind === "archer") o.ai = "aim";
+          else if (o.kind === "bomber") o.ai = "throw";
+          else { o.ai = "windup"; o.attack = ATTACK_DURATION; }   // arm held up, ready to swing / slam
         }
-      } else {
-        o.ai = "windup"; o.timer = 0;
-        o.attack = ATTACK_DURATION;   // arm held up, ready to swing
+        break;
       }
-    } else if (o.ai === "windup") {
-      if (o.timer >= FOES[o.kind].windup) {
-        o.ai = "strike"; o.timer = 0;
-        // A jump clears the swing; so does being somewhere else when it lands
-        if (Math.abs(dx) < o.reach + 14 && player.y + player.h > GROUND_Y - 30) hurtPlayer(o);
-      }
-    } else if (o.ai === "strike") {
-      o.attack = Math.max(0, ATTACK_DURATION - o.timer);
-      if (o.timer >= ATTACK_DURATION) { o.ai = "recover"; o.timer = 0; o.attack = 0; }
-    } else if (o.timer >= 0.5) {
-      o.ai = "walk"; o.timer = 0;
+      case "windup":
+        if (o.timer >= d.windup) {
+          o.timer = 0;
+          o.ai = "strike";
+          if (o.kind === "brute" || o.kind === "boss") {
+            // Slam: a shockwave runs along the ground both ways. Jump it.
+            sfx.slam();
+            shakeTime = Math.max(shakeTime, 0.25);
+            burst(ocx, GROUND_Y - 4, 12, "#ffb04a", 260);
+            shocks.push({ x: ocx, dir: -1, dist: 0, dmg: d.dmg }, { x: ocx, dir: 1, dist: 0, dmg: d.dmg });
+          } else if (o.solid && dist < 54 && player.y + player.h > GROUND_Y - 30) {
+            hurtPlayer(d.dmg, ocx);   // a jump clears the swing; so does being somewhere else
+          }
+        }
+        break;
+      case "strike":
+        o.attack = Math.max(0, ATTACK_DURATION - o.timer);
+        if (o.timer >= ATTACK_DURATION) { o.ai = "recover"; o.timer = 0; o.attack = 0; }
+        break;
+      case "warn":   // flashes red, then charges through where he was standing
+        o.dir = toward;
+        o.flash = 0.1;
+        if (o.timer >= d.windup) { o.ai = "charge"; o.timer = 0; o.chargeDir = toward; o.chargeHit = false; sfx.dash(); }
+        break;
+      case "charge":
+        o.x += o.chargeDir * 560 * dt;
+        o.runPhase += dt * 40;
+        if (!o.chargeHit && dist < 28 && player.y + player.h > GROUND_Y - 30) { o.chargeHit = true; hurtPlayer(d.dmg, ocx); }
+        if (o.timer >= 0.5 || o.x < -10 || o.x + o.w > W + 10) { o.ai = "recover"; o.timer = 0; o.x = Math.max(-10, Math.min(W + 10 - o.w, o.x)); }
+        break;
+      case "aim":   // draws the bow, then an arrow flies along the ground at chest height
+        o.dir = toward;
+        o.draw = Math.min(1, o.timer / d.windup);
+        if (o.timer >= d.windup) {
+          arrows.push({ x: ocx + o.dir * 20, y: GROUND_Y - 36, vx: o.dir * 430, dmg: d.dmg });
+          sfx.arrow();
+          o.draw = 0; o.ai = "recover"; o.timer = 0;
+        }
+        break;
+      case "throw":  // lobs a bomb at where the hero is standing
+        o.dir = toward;
+        if (o.timer >= d.windup) {
+          bombs.push({ x: ocx, y: o.y + 14, x0: ocx, y0: o.y + 14, tx: pcx, t: 0, dmg: d.dmg });
+          o.ai = "recover"; o.timer = 0;
+        }
+        break;
+      default:   // recover
+        if (o.timer >= d.rec) { o.ai = "walk"; o.timer = 0; }
     }
   }
 }
 
-function hurtPlayer(o) {
-  if (player.hurt > 0 || player.dash > 0 || state !== "running") return;
-  player.hp -= FOES[o.kind].dmg;
-  player.hurt = HURT_TIME;
-  shakeTime = Math.max(shakeTime, 0.2);
-  sfx.hit();
-  player.x = Math.max(8, Math.min(W - 8 - player.w, player.x + o.dir * 26));   // shoved away
-  burst(player.x + player.w / 2, player.y + 24, 8, "#ff4a3a", 220);
-  if (player.hp <= 0) { player.hp = 0; die(o); }
+function updateProjectiles(dt) {
+  const pcx = player.x + player.w / 2;
+  for (const a of arrows) {
+    a.x += a.vx * dt;
+    if (Math.abs(a.x - pcx) < 22 && a.y > player.y + 6 && a.y < player.y + player.h) {
+      hurtPlayer(a.dmg, a.x - Math.sign(a.vx) * 20);
+      if (player.hurt > 0) a.gone = true;
+    }
+    if (a.x < -30 || a.x > W + 30) a.gone = true;
+  }
+  arrows = arrows.filter((a) => !a.gone);
+
+  for (const b of bombs) {
+    b.t += dt;
+    const flight = 0.9, u = Math.min(1, b.t / flight);
+    b.x = b.x0 + (b.tx - b.x0) * u;
+    b.y = b.y0 + (GROUND_Y - 8 - b.y0) * u - 90 * 4 * u * (1 - u);
+    if (b.t >= flight + 0.5) {   // lands, sizzles, then goes off
+      b.gone = true;
+      blasts.push({ x: b.x, t: 0, r: 52, dmg: b.dmg, hit: false });
+      sfx.boom();
+      shakeTime = Math.max(shakeTime, 0.2);
+    }
+  }
+  bombs = bombs.filter((b) => !b.gone);
+
+  for (const b of blasts) {
+    b.t += dt;
+    if (!b.hit && Math.abs(pcx - b.x) < b.r + 8 && player.y + player.h > GROUND_Y - 50) { b.hit = true; hurtPlayer(b.dmg, b.x); }
+  }
+  blasts = blasts.filter((b) => b.t < 0.35);
+
+  for (const s of shocks) {
+    s.x += s.dir * 300 * dt;
+    s.dist += 300 * dt;
+    if (!s.hit && Math.abs(s.x - pcx) < 20 && player.y + player.h > GROUND_Y - 22) { s.hit = true; hurtPlayer(s.dmg, s.x - s.dir * 20); }
+  }
+  shocks = shocks.filter((s) => s.dist < 360);
 }
 
-function die(o) {
+// --- Hero ---
+function hurtPlayer(dmg, fromX) {
+  if (state !== "running" || player.hurt > 0 || player.inv > 0 || player.dash > 0) return;
+  player.hp -= dmg;
+  player.hurt = HURT_TIME;
+  player.stun = 0.3;
+  player.act = null;
+  shakeTime = Math.max(shakeTime, 0.2);
+  sfx.hit();
+  const away = player.x + player.w / 2 >= fromX ? 1 : -1;
+  player.x = Math.max(8, Math.min(W - 8 - player.w, player.x + away * 22));   // shoved away
+  burst(player.x + player.w / 2, player.y + 24, 8, "#ffe14d", 220);
+  if (player.hp <= 0) { player.hp = 0; die(); }
+}
+
+function die() {
   state = "dying";
+  dyingT = 0;
   releaseInput();
   document.body.classList.remove("playing");
   shakeTime = 0.3;
-  ragdoll = makeRagdoll(getPose(), (name) => {
-    const upper = UPPER_BODY.has(name);
-    return [o.dir * (upper ? 260 : 150) + (Math.random() - 0.5) * 60, upper ? -380 : -160];
-  });
-  ragdoll.clamp = true;  // the player's body stays on screen
 }
 
-// The blade lands partway through the swing, on every enemy in front of him (once each)
-function swordHits() {
-  const pcx = player.x + player.w / 2, f = player.facing;
+function startAction(spec) {
+  player.act = spec;
+  player.actT = 0;
+  player.fired = spec.hits.map(() => false);
+  player.buffered = false;
+  player.lungeV = spec.lunge || 0;
+  if (spec.skill) sfx.skill(); else sfx.slash();
+}
+
+// Lands one hit of the current action on every enemy in its reach
+function dealHit(hit) {
+  const f = player.facing, pcx = player.x + player.w / 2;
   for (const o of foes) {
-    if (o.dead || o.hitSwing === player.swingId) continue;
-    const ahead = (o.x + o.w / 2 - pcx) * f;   // how far in front of him it stands
-    if (ahead < -10 || ahead > REACH + o.w / 2) continue;
-    if (player.y + player.h < GROUND_Y - 70) continue;   // too high above them to reach
-    o.hitSwing = player.swingId;
-    o.hp--;
-    if (o.hp <= 0) {
-      const d = FOES[o.kind];
-      o.fling = f;
-      killEnemy(o, randInt(d.gold[0], d.gold[1]));
-      kills++;
-      score += d.pts;
-    } else {
-      o.x += f * 34;                 // shoved back, and the strike is interrupted
-      o.stagger = 0.45; o.flash = 0.12; o.ai = "walk"; o.timer = 0; o.attack = 0;
-      shakeTime = Math.max(shakeTime, 0.1);
-      burst(o.x + o.w / 2, o.y + 40, 8, "#ffb04a", 240);
-      popups.push({ x: o.x + o.w / 2, y: o.y - 10, t: 0, text: "HIT" });
+    if (o.dead || (!o.solid && !hit.screen)) continue;   // a ghost between flickers can't be touched
+    const ocx = o.x + o.w / 2;
+    const ahead = (ocx - pcx) * f;   // how far in front of him it stands
+    if (!hit.screen && (ahead < -hit.back - o.w / 2 || ahead > hit.front + o.w / 2)) continue;
+    if (!hit.screen && player.y + player.h < GROUND_Y - 70) continue;   // too high above them to reach
+    // A guard's shield stops anything from the side he's facing; only the ultimate gets past
+    if (o.shield && !hit.screen && o.dir === (pcx >= ocx ? 1 : -1)) {
       sfx.clang();
+      burst(o.x + o.w / 2 + o.dir * 12, o.y + 30, 6, "#d6e4f0", 200);
+      popups.push({ x: ocx, y: o.y - 10, t: 0, text: "BLOCK" });
+      continue;
     }
+    hurtFoe(o, hit.dmg, f * hit.kb);
   }
   foes = foes.filter((o) => !o.dead);
 }
 
+function hurtFoe(o, dmg, push) {
+  o.hp -= dmg;
+  if (o.hp <= 0) {
+    const d = FOES[o.kind];
+    o.fling = Math.sign(push) || player.facing;
+    killEnemy(o, randInt(d.gold[0], d.gold[1]));
+    kills++;
+    score += d.pts;
+    return;
+  }
+  const heavy = o.kind === "brute" || o.kind === "boss";
+  o.x = Math.max(-10, Math.min(W + 10 - o.w, o.x + push * (heavy ? 0.3 : 1)));
+  if (o.kind !== "boss" && o.ai !== "charge") { o.stagger = heavy ? 0.2 : 0.4; o.ai = "walk"; o.timer = 0; o.attack = 0; o.draw = 0; }
+  o.flash = 0.12;
+  shakeTime = Math.max(shakeTime, 0.08);
+  burst(o.x + o.w / 2, o.y + 40, 8, "#ffe14d", 240);
+  popups.push({ x: o.x + o.w / 2, y: o.y - 10, t: 0, text: String(dmg) });
+  sfx.clang();
+}
+
+function actionTick(dt) {
+  const spec = player.act;
+  player.actT += dt;
+  spec.hits.forEach((h, i) => {
+    if (!player.fired[i] && player.actT >= spec.hitT[i]) { player.fired[i] = true; dealHit(h); }
+  });
+  if (spec.invuln) player.inv = Math.max(player.inv, 0.1);
+  if (player.lungeV) {   // a short step into the swing that fades quickly
+    player.x = Math.max(8, Math.min(W - 8 - player.w, player.x + player.facing * player.lungeV * dt));
+    player.lungeV *= Math.pow(0.02, dt);
+    if (player.lungeV < 5) player.lungeV = 0;
+  }
+  if (spec.basic && queued.attack > 0) { player.buffered = true; queued.attack = 0; }
+  if (player.actT >= spec.total) {
+    player.act = null;
+    if (spec.basic) {
+      player.combo = (player.combo + 1) % COMBO.length;
+      player.comboTimer = 0.5;
+      if (player.buffered) queued.attack = 0.2;   // chain straight into the next swing
+    }
+  }
+}
+
 // --- Update ---
 function update(dt) {
-  // Walking: slower while swinging; he turns to face the way he walks
+  for (const k of Object.keys(queued)) queued[k] = Math.max(0, queued[k] - dt);
+  player.hurt = Math.max(0, player.hurt - dt);
+  player.inv = Math.max(0, player.inv - dt);
+  player.stun = Math.max(0, player.stun - dt);
+  player.dashCooldown = Math.max(0, player.dashCooldown - dt);
+  player.cd = player.cd.map((c) => Math.max(0, c - dt));
+  if (!player.act) {
+    player.comboTimer = Math.max(0, player.comboTimer - dt);
+    if (player.comboTimer === 0) player.combo = 0;
+  }
+
+  if (player.act) actionTick(dt);
+  const free = !player.act && player.stun <= 0 && player.dash <= 0;
+  if (free) {   // skills first (3, then 2, then 1), then the basic attack
+    for (const i of [2, 1, 0]) {
+      if (queued["s" + (i + 1)] > 0 && player.cd[i] <= 0) {
+        queued["s" + (i + 1)] = 0;
+        player.cd[i] = SKILLS[i].cd;
+        startAction(SKILLS[i]);
+        break;
+      }
+    }
+    if (!player.act && queued.attack > 0) { queued.attack = 0; startAction(COMBO[player.combo]); }
+  }
+
+  // Walking, or the dash
   const dir = inputDir();
-  player.moving = dir !== 0 && player.dash <= 0;
+  const walking = !player.act && player.stun <= 0 && player.dash <= 0;
+  player.moving = walking && dir !== 0;
   if (player.dash > 0) {
     player.x = Math.max(8, Math.min(W - 8 - player.w, player.x + player.dashDir * (DASH_DIST / DASH_TIME) * dt));
     player.dash = Math.max(0, player.dash - dt);
     ghostTimer -= dt;
-    if (ghostTimer <= 0) {   // blue afterimages trail behind him
-      const pts = getPose();
-      ghosts.push({ pts, axis: pts.hip.x, facing: player.facing, t: 0 });
-      ghostTimer = 0.025;
+    if (ghostTimer <= 0) {   // afterimages trail behind him
+      const fr = heroSprite();
+      ghosts.push({ sheet: fr.sheet, frame: fr.frame, cx: player.x + player.w / 2, feet: player.y + player.h, facing: player.facing, t: 0 });
+      ghostTimer = 0.03;
     }
-  } else if (dir) {
-    if (player.attack <= 0) player.facing = dir;
-    const sp = PLAYER_SPEED * (player.attack > 0 ? 0.45 : 1);
-    player.x = Math.max(8, Math.min(W - 8 - player.w, player.x + dir * sp * dt));
-    player.runPhase += dt * 11;
+  } else if (player.moving) {
+    player.facing = dir;
+    player.x = Math.max(8, Math.min(W - 8 - player.w, player.x + dir * PLAYER_SPEED * dt));
+    player.runT += dt;
   }
   for (const g of ghosts) g.t += dt;
   ghosts = ghosts.filter((g) => g.t < 0.25);
 
   // Jump (a press just before landing still counts), gravity, landing
-  jumpBuffer -= dt;
-  if (jumpBuffer > 0 && player.onGround && player.dash <= 0) {
+  if (queued.jump > 0 && player.onGround && walking) {
     player.vy = JUMP_VELOCITY;
     player.onGround = false;
-    jumpBuffer = 0;
+    queued.jump = 0;
     sfx.jump();
   }
   if (player.dash <= 0) {
@@ -1706,28 +1970,20 @@ function update(dt) {
     player.y += player.vy * dt;
   }
   if (player.y + player.h >= GROUND_Y) {
-    if (!player.onGround) {   // touchdown: a brief crouch and a puff of sparks
-      player.landT = 0.13;
-      burst(player.x + player.w / 2, GROUND_Y - 2, 6, "#ffb43a", 140);
-    }
+    if (!player.onGround) burst(player.x + player.w / 2, GROUND_Y - 2, 6, "#ffb43a", 140);   // touchdown
     player.vy = 0;
     player.onGround = true;
   }
-  player.landT = Math.max(0, player.landT - dt);
   if (player.onGround) player.y = GROUND_Y - player.h;
 
-  player.dashCooldown = Math.max(0, player.dashCooldown - dt);
   dashBtn.classList.toggle("cooling", player.dashCooldown > 0);
+  [sk1Btn, sk2Btn, sk3Btn].forEach((b, i) => b.classList.toggle("cooling", player.cd[i] > 0));
   if (hintTimer > 0) {
     hintTimer -= dt;
     if (hintTimer <= 2) document.body.classList.remove("show-hint");   // then it fades over those last 2 s
   }
-  player.hurt = Math.max(0, player.hurt - dt);
-  player.attack = Math.max(0, player.attack - dt);
-  player.attackCooldown = Math.max(0, player.attackCooldown - dt);
-  if (player.attack > 0 && player.attack < ATTACK_DURATION * 0.7) swordHits();
 
-  // Waves: enemies trickle in until the wave is used up, then a short rest, then the next wave
+  // Waves: enemies come through portals until the wave is used up, then a rest, then the next wave
   if (waveToSpawn > 0) {
     spawnTimer -= dt;
     if (spawnTimer <= 0 && foes.length + portals.length < Math.min(8, 3 + Math.floor(wave / 2))) {
@@ -1753,6 +2009,7 @@ function update(dt) {
   }
   portals = portals.filter((p) => p.t < 1.4);
   updateFoes(dt);
+  updateProjectiles(dt);
 
   for (const p of popups) { p.t += dt; p.y -= 40 * dt; }
   popups = popups.filter((p) => p.t < (p.life || 0.8));
@@ -2671,31 +2928,111 @@ function drawPortal(p) {
   ctx.restore();
 }
 
-function drawStickman() {
-  const pts = ragdoll ? ragdoll.points : getPose();
-  // Dash afterimages: blue silhouettes that fade
-  for (const g of ghosts) {
-    ctx.save();
-    ctx.globalAlpha = 0.45 * (1 - g.t / 0.25);
-    if (g.facing < 0) { ctx.translate(g.axis, 0); ctx.scale(-1, 1); ctx.translate(-g.axis, 0); }
-    drawFigure(g.pts, "#7fd4ff", "#7fd4ff", 4.6, HERO_HEAD);
-    ctx.restore();
+// Which sheet and frame the hero is showing right now
+function heroSprite() {
+  const now = performance.now() / 1000;
+  if (state === "dying") return { sheet: "hit3", frame: Math.min(2, Math.floor(dyingT * 6)), rot: Math.min(1.5, dyingT * 3.2) };
+  if (player.stun > 0) return { sheet: "hit1", frame: Math.min(2, Math.floor((0.3 - player.stun) / 0.1)) };
+  if (player.act) return actFrame(player.act, player.actT);
+  if (player.dash > 0) return { sheet: "dash", frame: 4 + Math.min(4, Math.floor((1 - player.dash / DASH_TIME) * 5)) };
+  if (!player.onGround) {
+    if (player.vy < -200) return { sheet: "jump", frame: Math.max(0, Math.min(2, Math.floor((player.vy + 780) / 190))) };
+    if (player.vy > 200) return { sheet: "fall", frame: Math.floor(now * 11) % 4 };
+    return { sheet: "jump_peak", frame: Math.floor(now * 8) % 3 };
   }
+  if (player.moving) return { sheet: "run", frame: Math.floor(player.runT * 16) % 10 };
+  return { sheet: "idle", frame: Math.floor(now / 0.17) % 4 };
+}
+
+// One frame of a sheet, feet at (cx, feet); face = 1 (right) or -1 (left)
+function drawSprite(sheet, frame, cx, feet, face, rot = 0) {
+  const img = SHEETS[sheet];
+  if (!img.complete || !img.naturalWidth) return;
   ctx.save();
-  if (!ragdoll) {
-    // He's drawn facing right; turn him around when he faces left
-    if (player.facing < 0) {
-      ctx.translate(pts.hip.x, 0);
-      ctx.scale(-1, 1);
-      ctx.translate(-pts.hip.x, 0);
-    }
-    if (player.hurt > 0 && Math.floor(player.hurt * 16) % 2) ctx.globalAlpha = 0.4;   // blinks after a hit
-  }
-  drawHero(pts);
-  drawSword(pts, !ragdoll && player.attack > 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.translate(cx, feet + 2 * SC);
+  if (rot) ctx.rotate(rot * face);
+  ctx.scale(face * SC, SC);
+  ctx.drawImage(img, frame * FRAME_W, 0, FRAME_W, FRAME_H, -FRAME_W / 2, -FRAME_H, FRAME_W, FRAME_H);
   ctx.restore();
 }
 
+// The slash effect of an equipped rare or legendary sword, drawn around his basic attacks
+function drawSkinSlash(cx, feet) {
+  const fx = SLASH_FX[skinState.equipped], a = player.act;
+  if (!fx || !a || !a.basic) return;
+  const p = (player.actT - (a.hitT[0] - 0.06)) / 0.2;
+  if (p <= 0 || p >= 1) return;
+  const cy = feet - 36;
+  ctx.save();
+  if (player.facing < 0) { ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.translate(-cx, 0); }
+  ctx.globalAlpha = 1 - 0.6 * p;
+  fx({ sh: { x: cx, y: cy }, r: 62, from: -2.5, now: -2.5 + 3.6 * Math.min(1, p * 1.3 + 0.2),
+       pts: { neck: { x: cx, y: cy - 14 } }, seed: Math.floor(performance.now() / 60), clock: performance.now() / 1000 });
+  ctx.restore();
+}
+
+function drawStickman() {
+  // Dash afterimages
+  for (const g of ghosts) {
+    ctx.save();
+    ctx.globalAlpha = 0.4 * (1 - g.t / 0.25);
+    drawSprite(g.sheet, g.frame, g.cx, g.feet, g.facing);
+    ctx.restore();
+  }
+  const fr = heroSprite();
+  const cx = player.x + player.w / 2, feet = player.y + player.h;
+  heroFlash = null;
+  if (fr.sheet === "skill3" && fr.frame >= 14 && fr.frame <= 18) {
+    // The ultimate's flash frames fill the whole screen (skipped in Comfort Mode)
+    if (!settings.comfort) { heroFlash = fr.frame; return; }
+    fr.frame = 19;
+  }
+  drawSkinSlash(cx, feet);
+  ctx.save();
+  if (player.hurt > 0 && state === "running") ctx.globalAlpha = 0.65;
+  ctx.shadowColor = auraColors().front;   // the aura from CUSTOMIZE glows around him
+  ctx.shadowBlur = 8;
+  drawSprite(fr.sheet, fr.frame, cx, feet, player.facing, fr.rot || 0);
+  ctx.restore();
+}
+
+// Arrows, bombs, blasts and ground shockwaves
+function drawProjectiles() {
+  ctx.lineCap = "round";
+  for (const a of arrows) {
+    const sg = Math.sign(a.vx);
+    ctx.strokeStyle = colors.ink;
+    ctx.lineWidth = 2;
+    line(a.x - sg * 14, a.y, a.x + sg * 10, a.y);
+    ctx.fillStyle = colors.ink;
+    ctx.beginPath(); ctx.moveTo(a.x + sg * 17, a.y); ctx.lineTo(a.x + sg * 8, a.y - 3.5); ctx.lineTo(a.x + sg * 8, a.y + 3.5); ctx.fill();
+  }
+  for (const b of bombs) {
+    const landed = b.t > 0.9;
+    ctx.fillStyle = landed && Math.floor(b.t * 12) % 2 ? "#e02020" : "#222";   // blinks red before it goes off
+    ctx.beginPath(); ctx.arc(b.x, b.y, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#ffb02e";
+    ctx.beginPath(); ctx.arc(b.x + 4, b.y - 8, 1.8, 0, Math.PI * 2); ctx.fill();
+  }
+  for (const s of shocks) {
+    ctx.globalAlpha = Math.max(0.2, 1 - s.dist / 360);
+    ctx.fillStyle = "#ff9a2a";
+    ctx.beginPath();
+    ctx.moveTo(s.x - 15, GROUND_Y); ctx.lineTo(s.x, GROUND_Y - 24 + Math.sin(s.dist * 0.25) * 4); ctx.lineTo(s.x + 15, GROUND_Y);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  for (const b of blasts) {
+    const k = b.t / 0.35;
+    ctx.globalAlpha = 1 - k;
+    ctx.fillStyle = "#ff9a2a";
+    ctx.beginPath(); ctx.arc(b.x, GROUND_Y - 8, b.r * (0.4 + 0.6 * k), 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#fff0a0";
+    ctx.beginPath(); ctx.arc(b.x, GROUND_Y - 8, b.r * 0.5 * (1 - k), 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
 
 // The bow an archer holds out in front of him (he faces left); the string pulls back as he aims
 function drawBow(pts, o) {
@@ -2821,7 +3158,7 @@ function drawEnemy(pts, alive, shield, o = {}) {
 function drawFoe(o) {
   const pts = enemyPose(o);
   ctx.save();
-  ctx.globalAlpha = Math.min(1, o.age / 0.25);   // fades in as it steps out of the portal
+  ctx.globalAlpha = Math.min(1, o.age / 0.25) * (o.solid === false ? 0.3 : 1);   // fades in from the portal; ghosts flicker
   if (o.dir === 1) {
     const cx = o.x + o.w / 2;
     ctx.translate(cx, 0);
@@ -2943,6 +3280,7 @@ function draw() {
   for (const c of corpses) drawEnemy(c.points, false, false, c);
   portals.forEach(drawPortal);
   for (const o of foes) drawFoe(o);
+  drawProjectiles();
   coins.forEach(drawCoin);
   for (const p of sparks) {
     ctx.globalAlpha = Math.max(0, 1 - p.t / p.life);
@@ -3000,15 +3338,35 @@ function draw() {
   ctx.font = "bold 12px 'Courier New', monospace";
   ctx.textAlign = "left";
   ctx.fillText(`KILLS ${kills}`, 84, 52);
-  // The dash skill: a small bar that fills while it recharges
-  ctx.fillText("DASH", 84, 70);
-  ctx.fillStyle = colors.inkBack;
-  ctx.fillRect(126, 61, 70, 9);
-  ctx.fillStyle = player.dashCooldown > 0 ? "#8892a0" : "#4aa8ff";
-  ctx.fillRect(126, 61, 70 * (1 - player.dashCooldown / DASH_COOLDOWN), 9);
-  ctx.strokeStyle = colors.ink;
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(126, 61, 70, 9);
+  // Dash and skills 1-3: each bar fills while it recharges and turns bright when ready
+  [["DASH", player.dashCooldown, DASH_COOLDOWN, "#4aa8ff"], ["1", player.cd[0], SKILLS[0].cd, "#ffd34d"],
+   ["2", player.cd[1], SKILLS[1].cd, "#ffd34d"], ["3", player.cd[2], SKILLS[2].cd, "#ff7a2a"]].forEach(([label, cd, max, color], i) => {
+    const x = 84 + i * 50;
+    ctx.fillStyle = colors.ink;
+    ctx.font = "bold 10px 'Courier New', monospace";
+    ctx.fillText(label, x, 66);
+    ctx.fillStyle = colors.inkBack;
+    ctx.fillRect(x, 70, 44, 7);
+    ctx.fillStyle = cd > 0 ? "#8892a0" : color;
+    ctx.fillRect(x, 70, 44 * (1 - cd / max), 7);
+    ctx.strokeStyle = colors.ink;
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(x, 70, 44, 7);
+  });
+  const boss = foes.find((o) => o.kind === "boss");
+  if (boss) {
+    ctx.fillStyle = colors.inkBack;
+    ctx.fillRect(W / 2 - 110, 44, 220, 9);
+    ctx.fillStyle = EYE_RED;
+    ctx.fillRect(W / 2 - 110, 44, 220 * Math.max(0, boss.hp) / boss.maxHp, 9);
+    ctx.strokeStyle = colors.ink;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(W / 2 - 110, 44, 220, 9);
+    ctx.fillStyle = colors.ink;
+    ctx.font = "bold 12px 'Courier New', monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("THE WARLORD", W / 2, 68);
+  }
 
   if (bossBanner) {
     ctx.globalAlpha = Math.min(1, bossBanner.t / 0.5);
@@ -3044,6 +3402,15 @@ function draw() {
   ctx.font = "bold 20px 'Courier New', monospace";
   ctx.textAlign = "right";
   ctx.fillText(`HI ${pad5(high(runDiff))}  ${pad5(score)}`, W - 20, 36);
+
+  // The ultimate's flash frames cover the whole screen for a moment
+  if (heroFlash !== null && SHEETS.skill3.complete) {
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(SHEETS.skill3, heroFlash * FRAME_W, 0, FRAME_W, FRAME_H, 0, 0, W, H);
+    ctx.restore();
+  }
 }
 
 // --- Main loop ---
@@ -3054,9 +3421,9 @@ function loop(time) {
   if (state === "running") {
     update(dt);
   }
-  if (ragdoll) {
-    updateRagdoll(ragdoll, dt);
-    if (state === "dying" && ragdoll.time >= RAGDOLL_DURATION) gameOver();
+  if (state === "dying") {
+    dyingT += dt;
+    if (dyingT >= RAGDOLL_DURATION) gameOver();
   }
   for (const c of corpses) updateRagdoll(c, dt);
   if (shakeTime > 0) shakeTime -= dt;
