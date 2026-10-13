@@ -134,32 +134,43 @@
     text-shadow: 0 1px 3px #000, 0 0 6px #000;
   }
 
-  /* Gold and high score, top right of the main menu */
-  .stats {
+  /* Gold and high score sit in the top-right corner of the main menu */
+  .menu-stats {
     position: absolute;
-    top: max(14px, 3vh);
-    right: max(16px, 3vw);
+    top: 2.5vh;
+    right: 2vw;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    min-width: 160px;
+    align-items: flex-end;
+    gap: 8px;
   }
   .stat {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 5px 12px 5px 10px;
-    background: rgba(20, 12, 30, 0.68);
+    gap: 8px;
+    min-width: 96px;
+    box-sizing: border-box;
+    padding: 4px 12px;
     border: 2px solid #ff8a1f;
-    border-radius: 12px;
-    box-shadow: 0 0 12px rgba(255, 110, 20, 0.4);
+    border-radius: 999px;
+    background: rgba(20, 12, 30, 0.7);
+    box-shadow: 0 0 12px rgba(255, 110, 20, 0.45);
+    font: bold 16px "Courier New", monospace;
+    text-shadow: 0 1px 2px #000;
   }
-  .stat.gold { border-color: #f5b921; box-shadow: 0 0 12px rgba(245, 185, 33, 0.45); }
-  .stat small { display: block; font-size: 9px; letter-spacing: 1px; color: #cbbfdc; text-shadow: 0 1px 2px #000; }
-  .stat b { display: block; font-size: 18px; letter-spacing: 1px; color: #fff; text-shadow: 0 1px 3px #000; }
-  .stat.gold b { color: #ffd34d; }
-  .stat .coin { width: 20px; height: 20px; margin: 0; border-width: 3px; flex: none; }
-  .stat .trophy { width: 26px; text-align: center; font-size: 26px; line-height: 1; color: #ff8a1f; text-shadow: 0 0 8px rgba(255, 110, 20, 0.7); flex: none; }
+  .stat .coin { width: 14px; height: 14px; margin: 0; box-shadow: 0 0 8px rgba(255, 211, 77, 0.8); }
+  .stat-value { margin-left: auto; letter-spacing: 1px; }
+  .stat-gold .stat-value { color: #ffd34d; }
+  .stat-high {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0;
+    border-radius: 16px;
+    padding: 3px 12px 4px;
+  }
+  .stat-high .stat-value { margin-left: 0; color: #fff; line-height: 1.1; }
+  .stat-label { color: #ff8a1f; font-size: 10px; letter-spacing: 2px; }
+  .stat-label small { color: #cbb7e0; font-size: 10px; letter-spacing: 1px; }
 
   /* Shop + inventory: same artwork as the main menu, dimmed so the cards stand out */
   .store-menu {
@@ -259,11 +270,13 @@
     <button data-action="inventory">INVENTORY</button>
   </div>
   <button data-action="settings">SETTINGS</button>
-  <div class="stats" id="mainStats">
-    <div class="stat gold"><span class="coin"></span><div><small>GOLD</small><b id="goldText"></b></div></div>
-    <div class="stat"><span class="trophy">&#9733;</span><div><small id="highLabel">HIGH SCORE</small><b id="highText"></b></div></div>
+  <div class="menu-stats">
+    <div class="stat stat-gold"><span class="coin"></span><span class="stat-value" id="goldText"></span></div>
+    <div class="stat stat-high">
+      <span class="stat-label">BEST <small id="highDiff"></small></span>
+      <span class="stat-value" id="highText"></span>
+    </div>
   </div>
-  <p>Jump: JUMP / SPACE &nbsp; Duck: hold DUCK / DOWN &nbsp; Attack: ATTACK / X</p>
 </div>
 
 <div class="menu store-menu" id="shopMenu">
@@ -554,9 +567,8 @@ function showMenu(name) {
   for (const [key, el] of Object.entries(menus)) el.classList.toggle("open", key === name);
   document.body.classList.toggle("playing", name === null);
   if (name === "main") {
-    document.getElementById("highLabel").textContent =
-      `HIGH SCORE · ${DIFFICULTIES[settings.difficulty].label}`;
     document.getElementById("highText").textContent = pad5(high(settings.difficulty));
+    document.getElementById("highDiff").textContent = DIFFICULTIES[settings.difficulty].label;
     document.getElementById("goldText").textContent = fmt(totalGold);
   }
   if (name === "settings") refreshSettingsLabels();
