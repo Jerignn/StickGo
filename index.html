@@ -434,9 +434,19 @@ function high(diff) { return highScores[diff] || 0; }
 
 // Gold dropped by enemies; the total is kept across runs
 let totalGold = Number(localStorage.getItem("stickgo-gold") || 0);
-// Dev shortcut for testing the shop: open index.html?gold=99999 to set your gold
+// Dev testing gold: the browser version (not the phone app) gets this once, so the shop can be
+// tried out. Bump the number in DEV_GRANT_ID to grant it again. Also ?gold=N sets any amount.
+const DEV_GOLD = 99999999, DEV_GRANT_ID = "1";
+const onPhone = location.pathname.includes("android_asset");
 const devGold = Number(new URLSearchParams(location.search).get("gold"));
-if (devGold > 0) { totalGold = devGold; localStorage.setItem("stickgo-gold", totalGold); }
+if (devGold > 0) {
+  totalGold = devGold;
+  localStorage.setItem("stickgo-gold", totalGold);
+} else if (!onPhone && localStorage.getItem("stickgo-dev-grant") !== DEV_GRANT_ID) {
+  totalGold = DEV_GOLD;
+  localStorage.setItem("stickgo-gold", totalGold);
+  localStorage.setItem("stickgo-dev-grant", DEV_GRANT_ID);
+}
 
 // --- Sword skins (cosmetic only: every sword has the same reach) ---
 // The shop groups skins by rarity. How a skin is drawn (see drawBlade):
