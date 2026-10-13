@@ -380,6 +380,7 @@
 
 <div class="menu store-menu" id="invMenu">
   <div class="shop-head"><h1>INVENTORY</h1></div>
+  <canvas id="invHero" width="192" height="192" style="image-rendering: pixelated; width: 144px; height: 144px;"></canvas>
   <div class="shop-row" id="invItems"></div>
   <p id="invMsg"></p>
   <div class="shop-foot">
@@ -820,11 +821,22 @@ function swordCard(id) {
 }
 
 // Keeps the glowing, sparking swords moving while the shop or inventory is open
+function drawInvHero() {
+  const c = document.getElementById("invHero"), g = c.getContext("2d");
+  const st = HS.idle, img = SHEETS[st.sheet];
+  if (!img.complete) return;
+  const f = st.frames[Math.floor(performance.now() / 1000 * st.fps) % st.frames.length];
+  g.imageSmoothingEnabled = false;
+  g.clearRect(0, 0, c.width, c.height);
+  g.drawImage(img, f * FRAME_W + 32, 0, 64, FRAME_H, 0, 0, c.width, c.height);   // 3x, centred on him
+}
+
 function animatePreviews() {
   const open = menus.shop.classList.contains("open") || menus.inventory.classList.contains("open");
   if (!open) { clearInterval(previewTimer); previewTimer = null; return; }
   if (previewTimer) return;
   previewTimer = setInterval(() => {
+    drawInvHero();
     for (const c of document.querySelectorAll("canvas[data-anim]")) {
       drawSwordPreview(c, SWORD_SKINS[c.dataset.anim]);
     }
