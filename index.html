@@ -26,17 +26,21 @@
     background: var(--sky);
     image-rendering: pixelated;
   }
+  /* Touch controls: dark glass buttons with a light rim so they read on the day and night sky.
+     --b is the big button size, --sm the skill button size; both follow the BUTTON SIZE setting. */
+  :root { --b: max(var(--btn-size), 64px); --sm: max(calc(var(--btn-size) * 0.66), 50px); --rim: rgba(255, 255, 255, 0.85); --glass: rgba(24, 26, 34, 0.5); }
   .btn {
     position: fixed;
-    bottom: 5vh;
-    width: var(--btn-size);
-    height: var(--btn-size);
-    min-width: 64px;
-    min-height: 64px;
+    bottom: 4vh;
+    width: var(--b);
+    height: var(--b);
+    box-sizing: border-box;
     border-radius: 50%;
-    border: 3px solid var(--ink);
-    background: rgba(128, 128, 128, 0.15);
-    color: var(--ink);
+    border: 3px solid var(--rim);
+    background: var(--glass);
+    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35), inset 0 0 0 2px rgba(0, 0, 0, 0.25);
+    color: #fff;
+    text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
     font: bold 16px "Courier New", monospace;
     display: flex;
     align-items: center;
@@ -44,32 +48,72 @@
     touch-action: none;
     -webkit-touch-callout: none;
     -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    transition: transform 0.06s, background 0.06s;
   }
-  .btn.pressed { background: rgba(128, 128, 128, 0.4); }
-  /* Left thumb walks, right thumb attacks */
-  #leftBtn { left: 4vw; font-size: 28px; }
-  #rightBtn { left: calc(7vw + max(var(--btn-size), 64px)); font-size: 28px; }
-  /* Right thumb: jump and attack side by side, dash above them */
-  #jumpBtn { right: 4vw; font-size: 22px; }
-  #attackBtn { right: calc(7vw + max(var(--btn-size), 64px)); font-size: 14px; }
-  /* Dash and skills 1-3: a row of smaller buttons above attack and jump */
+  .btn svg { width: 52%; height: 52%; fill: #fff; stroke: none; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.55)); pointer-events: none; }
+  .btn.pressed { background: rgba(255, 255, 255, 0.35); transform: scale(0.93); }
+  /* Left thumb: one joined walk pad. Right thumb: attack (biggest) and jump side by side */
+  #leftBtn, #rightBtn { bottom: 7vh; width: calc(var(--b) * 1.05); font-size: 28px; }
+  #leftBtn { left: 3vw; border-radius: 999px 0 0 999px; }
+  #rightBtn { left: calc(3vw + var(--b) * 1.05 - 3px); border-radius: 0 999px 999px 0; }
+  #jumpBtn { right: 3vw; bottom: 7vh; font-size: 22px; }
+  #attackBtn {
+    right: calc(3vw + var(--b) + 2vw);
+    width: calc(var(--b) * 1.2);
+    height: calc(var(--b) * 1.2);
+    bottom: 6vh;
+    border-color: #ff9a3a;
+    font-size: 15px;
+  }
+  #attackBtn svg { width: 56%; height: 56%; }
+  /* Dash and skills 1-3: a row of smaller buttons above attack and jump, right edges lined up */
   #skillRow {
     position: fixed;
-    right: 4vw;
-    bottom: calc(10vh + max(var(--btn-size), 64px));
+    right: 3vw;
+    bottom: calc(6vh + var(--b) * 1.2 + 3.5vh);
     display: flex;
-    gap: 1.6vw;
+    gap: 1.4vw;
   }
   .btn.small {
     position: relative;
     bottom: auto;
-    width: calc(var(--btn-size) * 0.72);
-    height: calc(var(--btn-size) * 0.72);
+    width: var(--sm);
+    height: var(--sm);
     min-width: 50px;
     min-height: 50px;
-    font-size: 24px;
+    font-size: 22px;
+    overflow: visible;
   }
-  .btn.cooling { opacity: 0.35; }
+  #dashBtn { border-color: #4aa8ff; }
+  #sk1Btn, #sk2Btn { border-color: #ffd34d; }
+  #sk3Btn { border-color: #ff7a2a; }
+  /* The cooldown clock: the unfinished part is shaded and is eaten away clockwise, with the seconds
+     left in the middle. --cd runs from 1 (just used) down to 0 (ready). */
+  .btn .cd {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(transparent calc((1 - var(--cd, 0)) * 1turn), rgba(0, 0, 0, 0.72) 0);
+    pointer-events: none;
+    display: none;
+  }
+  .btn .cdn {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font: bold 17px "Courier New", monospace;
+    color: #fff;
+    pointer-events: none;
+  }
+  .btn.cooling .cd { display: block; }
+  .btn.cooling .cdn { display: flex; }
+  .btn.cooling { border-color: rgba(255, 255, 255, 0.45); }
+  .btn.cooling > .glyph { opacity: 0.3; }
+  @keyframes ready-pop { 0% { transform: scale(1.18); box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.7); } 100% { transform: scale(1); } }
+  .btn.ready { animation: ready-pop 0.35s ease-out; }
   /* A small caption under a button says what it does; it fades out a few seconds into the run */
   .btn[data-cap]::after {
     content: attr(data-cap);
@@ -81,6 +125,7 @@
     letter-spacing: 1px;
     white-space: nowrap;
     color: var(--ink);
+    text-shadow: none;
     opacity: 0;
     transition: opacity 2s;
     pointer-events: none;
@@ -160,19 +205,23 @@
   }
   .menu button:active { background: #444855; }
   #settingsMenu {
-    flex-direction: row;
-    flex-wrap: wrap;
+    display: none;
+    grid-template-columns: repeat(2, minmax(0, 300px));
     align-content: center;
     justify-content: center;
     gap: 12px 14px;
     padding: 0 5vw;
     box-sizing: border-box;
   }
-  #settingsMenu h1, #settingsMenu p { flex-basis: 100%; text-align: center; margin: 0; }
+  #settingsMenu.open { display: grid; }
+  #settingsMenu h1 { grid-column: 1 / -1; text-align: center; margin: 0 0 4px; }
+  #settingsMenu button { min-width: 0; width: 100%; }
+  #settingsMenu button[data-action="back"] { grid-column: 1 / -1; justify-self: center; width: 50%; }
 
   /* Main menu: full-screen artwork (it already has the logo) with buttons on the left */
   #mainMenu {
-    background: #1a1430 url("pictures/mainmenu.jpg") center 25% / cover no-repeat;
+    background: #1a1430 url("pictures/mainmenu_px.png") center 25% / cover no-repeat;
+    image-rendering: pixelated;
     align-items: flex-start;
     justify-content: flex-end;
     padding: 0 0 9vh 6vw;
@@ -182,10 +231,13 @@
     color: #fff;
     background: rgba(20, 12, 30, 0.6);
     border-color: #ff8a1f;
-    box-shadow: 0 0 12px rgba(255, 110, 20, 0.45);
-    text-shadow: 0 1px 2px #000;
+    border-radius: 0;   /* pixel style: square corners, a hard stepped shadow, no blur */
+    box-shadow: 4px 4px 0 #000, inset -3px -3px 0 rgba(0, 0, 0, 0.45), inset 3px 3px 0 rgba(255, 190, 120, 0.25);
+    text-shadow: 2px 2px 0 #000;
+    letter-spacing: 2px;
+    text-transform: uppercase;
   }
-  #mainMenu button:active, .store-menu button:active { background: rgba(255, 120, 30, 0.55); }
+  #mainMenu button:active, .store-menu button:active { background: rgba(255, 120, 30, 0.55); transform: translate(3px, 3px); box-shadow: 1px 1px 0 #000; }
   #mainMenu p, .store-menu p {
     color: #fff;
     text-shadow: 0 1px 3px #000, 0 0 6px #000;
@@ -209,9 +261,9 @@
     box-sizing: border-box;
     padding: 4px 12px;
     border: 2px solid #ff8a1f;
-    border-radius: 999px;
-    background: rgba(20, 12, 30, 0.7);
-    box-shadow: 0 0 12px rgba(255, 110, 20, 0.45);
+    border-radius: 0;
+    background: rgba(20, 12, 30, 0.8);
+    box-shadow: 3px 3px 0 #000;
     font: bold 16px "Courier New", monospace;
     text-shadow: 0 1px 2px #000;
   }
@@ -222,7 +274,6 @@
     flex-direction: column;
     align-items: flex-end;
     gap: 0;
-    border-radius: 16px;
     padding: 3px 12px 4px;
   }
   .stat-high .stat-value { margin-left: 0; color: #fff; line-height: 1.1; }
@@ -232,10 +283,11 @@
   /* Shop + inventory: same artwork as the main menu, dimmed so the cards stand out */
   .store-menu {
     background: linear-gradient(rgba(12, 8, 24, 0.62), rgba(12, 8, 24, 0.62)),
-                #1a1430 url("pictures/mainmenu.jpg") center 25% / cover no-repeat;
+                #1a1430 url("pictures/mainmenu_px.png") center 25% / cover no-repeat;
+    image-rendering: pixelated;
     gap: 8px;
   }
-  .store-menu h1 { color: #fff; font-size: 28px; margin: 0; text-shadow: 0 2px 4px #000; }
+  .store-menu h1 { color: #fff; font-size: 28px; margin: 0; text-shadow: 3px 3px 0 #000; }
   .shop-head { display: flex; align-items: baseline; gap: 28px; }
   #shopGold { color: #ffd34d; font: bold 20px "Courier New", monospace; text-shadow: 0 1px 3px #000; }
   .coin {
@@ -253,7 +305,7 @@
     text-shadow: 0 1px 3px #000;
   }
   .shop-row { display: flex; gap: 14px; }
-  /* Customize: a live preview of the hero next to the hats / scarves / auras */
+  /* Customize: a live preview of the stickman next to his colours / accessories */
   .look-wrap { display: flex; align-items: center; gap: 22px; max-width: 96vw; }
   #lookPreview {
     height: min(62vh, 300px);
@@ -282,6 +334,17 @@
   #lookItems .card button.cant { opacity: 0.55; }
   #lookMsg { min-height: 1.2em; color: #ffd34d; font-size: 13px; }
   #shopSections { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  /* Shop rows and the inventory wrap into rows and scroll when there are more weapons than fit */
+  #shopSections .shop-row, #invItems {
+    flex-wrap: wrap;
+    justify-content: center;
+    width: min(820px, 94vw);
+    max-height: calc(100vh - 170px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 8px 8px 4px;
+    box-sizing: border-box;
+  }
   .tabs { display: flex; gap: 8px; }
   .store-menu .tab {
     min-width: 0;
@@ -292,34 +355,24 @@
     box-shadow: none;
   }
   .store-menu .tab.active { background: var(--rar); color: #111; text-shadow: none; }
-  /* Inventory: wraps into rows and scrolls when there are more swords than fit */
-  #invItems {
-    flex-wrap: wrap;
-    justify-content: center;
-    max-width: 800px;
-    max-height: calc(100vh - 150px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 4px;
-  }
   #invMsg { min-height: 1.2em; color: #ffd34d; font-size: 13px; }
   /* Shop and inventory share one row on the main menu */
   .menu-pair { display: flex; gap: 10px; width: 240px; }
   #mainMenu .menu-pair button { min-width: 0; flex: 1; padding: 10px 6px; font-size: 15px; }
   .card {
     box-sizing: border-box;
-    width: 178px;
-    padding: 10px;
+    width: 150px;
+    padding: 8px;
     border: 3px solid var(--rar, #ff8a1f);
-    border-radius: 12px;
-    background: rgba(20, 12, 30, 0.7);
-    box-shadow: 0 0 12px var(--rar-glow, rgba(255, 110, 20, 0.35));
+    border-radius: 0;
+    background: rgba(20, 12, 30, 0.8);
+    box-shadow: 4px 4px 0 #000, inset 0 0 14px var(--rar-glow, rgba(255, 110, 20, 0.35));
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 4px;
   }
-  .card.equipped { border-color: #ffd34d; box-shadow: 0 0 18px rgba(255, 211, 77, 0.7); }
+  .card.equipped { border-color: #ffd34d; box-shadow: 4px 4px 0 #000, inset 0 0 18px rgba(255, 211, 77, 0.6); }
   .card canvas { width: 100%; height: auto; }
   .card .name {
     color: #fff;
@@ -345,12 +398,12 @@
 <div class="btn" id="leftBtn" data-cap="WALK">&#9664;</div>
 <div class="btn" id="rightBtn" data-cap="WALK">&#9654;</div>
 <div class="btn" id="jumpBtn" data-cap="JUMP">&#9650;</div>
-<div class="btn" id="attackBtn" data-cap="COMBO">ATTACK</div>
+<div class="btn" id="attackBtn" data-cap="COMBO"><svg viewBox="0 0 16 16" shape-rendering="crispEdges"><path d="M13 1h2v2h-1v1h-1v1h-1v1h-1v1h-1v1H9v1H8v1H7v1H6v1H5v1H4V9h1V8h1V7h1V6h1V5h1V4h1V3h1V2h1z"/><path d="M3 10h3v1H5v1H4v3H3v-1H2v-1h1z"/><path d="M2 13h1v1H2z"/></svg></div>
 <div id="skillRow">
-  <div class="btn small" id="dashBtn" data-cap="DASH">&raquo;</div>
-  <div class="btn small" id="sk1Btn" data-cap="SLAM">1</div>
-  <div class="btn small" id="sk2Btn" data-cap="SPIN">2</div>
-  <div class="btn small" id="sk3Btn" data-cap="ULTIMATE">3</div>
+  <div class="btn small" id="dashBtn" data-cap="DASH"><span class="glyph">&raquo;</span><i class="cd"></i><b class="cdn"></b></div>
+  <div class="btn small" id="sk1Btn" data-cap="SLAM"><span class="glyph">1</span><i class="cd"></i><b class="cdn"></b></div>
+  <div class="btn small" id="sk2Btn" data-cap="SPIN"><span class="glyph">2</span><i class="cd"></i><b class="cdn"></b></div>
+  <div class="btn small" id="sk3Btn" data-cap="ULTIMATE"><span class="glyph">3</span><i class="cd"></i><b class="cdn"></b></div>
 </div>
 <div id="keyHint">A / D  WALK &nbsp;&middot;&nbsp; W  JUMP &nbsp;&middot;&nbsp; SPACE  ATTACK x3 &nbsp;&middot;&nbsp; SHIFT  DASH &nbsp;&middot;&nbsp; 1 2 3  SKILLS</div>
 <div id="pauseBtn" aria-label="Pause"><span></span><span></span></div>
@@ -418,10 +471,8 @@
   <button data-action="btnSize" id="btnSizeBtn"></button>
   <button data-action="sound" id="soundBtn"></button>
   <button data-action="music" id="musicBtn"></button>
-  <button data-action="comfort" id="comfortBtn"></button>
   <button data-action="resetHigh" id="resetHighBtn">RESET HIGH SCORES</button>
   <button data-action="back">BACK</button>
-  <p id="comfortHint">COMFORT MODE: slower top speed, no screen shake, dark screen. Good if fast games make you dizzy.</p>
 </div>
 
 <div class="menu" id="overMenu">
@@ -433,6 +484,7 @@
 </div>
 
 <script src="animations.js"></script>
+<script src="hold-data.js"></script>
 <script>
 const canvas = document.getElementById("game");
 let ctx = canvas.getContext("2d");
@@ -455,7 +507,6 @@ resizeCanvas();
 const GROUND_Y = 250;
 
 // --- Tunable settings ---
-// Comfort Mode: a lower top speed, no screen shake, a dark screen and a quieter ground
 const GRAVITY = 2400;        // px/s^2
 const JUMP_VELOCITY = -780;  // px/s
 const JUMP_BUFFER = 0.1;     // s a jump press is remembered while still in the air
@@ -464,7 +515,8 @@ const DASH_TIME = 0.16;      // s a dash lasts (he can't be hurt during it)
 const DASH_COOLDOWN = 2;     // s before he can dash again
 const HINT_TIME = 8;         // s the control labels stay on screen before they've faded
 const ATTACK_DURATION = 0.25;  // s a sword swing lasts (and can hit for)
-const ATTACK_COOLDOWN = 0.1;   // s after a swing before the next one
+const COMBO_RECOVERY = 0.35;   // s he is open after the 3rd swing before he can attack again
+const LIGHT_PUSH = 0.35;       // how much of the shove the first two swings keep (only the finisher staggers)
 
 // Speeds in px/s; gain is px/s added per second
 const DIFFICULTIES = {
@@ -479,7 +531,7 @@ const BUTTON_SIZES = {
 };
 
 const settings = Object.assign(
-  { difficulty: "normal", btnSize: "medium", sound: true, music: true, comfort: false },
+  { difficulty: "normal", btnSize: "medium", sound: true, music: true },
   JSON.parse(localStorage.getItem("stickgo-settings") || "{}")
 );
 
@@ -495,6 +547,13 @@ if (oldHigh) {
   highScores[settings.difficulty] = Math.max(oldHigh, highScores[settings.difficulty] || 0);
   localStorage.setItem("stickgo-highs", JSON.stringify(highScores));
   localStorage.removeItem("stickgo-high");
+}
+// One-time wipe of every saved high score. Bump the number in HIGH_RESET_ID to wipe them again.
+const HIGH_RESET_ID = "1";
+if (localStorage.getItem("stickgo-high-reset") !== HIGH_RESET_ID) {
+  for (const key of Object.keys(highScores)) delete highScores[key];
+  localStorage.removeItem("stickgo-highs");
+  localStorage.setItem("stickgo-high-reset", HIGH_RESET_ID);
 }
 function high(diff) { return highScores[diff] || 0; }
 
@@ -527,8 +586,32 @@ const RARITIES = {
   rare:      { label: "RARE",      color: "#b266ff", glow: "rgba(178, 102, 255, 0.50)" },
   legendary: { label: "LEGENDARY", color: "#ffa930", glow: "rgba(255, 169, 48, 0.60)" }
 };
+// Skins with img are pixel-art pictures from pictures/weapons/ (cut by tools/cut_weapons.py);
+// slash = the SLASH_FX his basic attacks leave while it is equipped.
 const SWORD_SKINS = {
-  starter: { name: "STARTER SCYTHE", rarity: null, price: 0, blade: null, guard: null, len: 26, width: 3 }
+  starter: { name: "STARTER SCYTHE", rarity: null, price: 0, blade: null, guard: null, len: 26, width: 3 },
+  rusty:         { name: "RUSTY SABRE", rarity: "common", price: 100, img: "rusty" },
+  wooden:        { name: "WOODEN SWORD", rarity: "common", price: 100, img: "wooden" },
+  cleaver:       { name: "BUTCHER CLEAVER", rarity: "common", price: 150, img: "cleaver" },
+  cutlass:       { name: "BRASS CUTLASS", rarity: "common", price: 150, img: "cutlass" },
+  iron:          { name: "IRON SWORD", rarity: "common", price: 200, img: "iron" },
+  serrated:      { name: "SERRATED BLADE", rarity: "uncommon", price: 400, img: "serrated" },
+  frost_staff:   { name: "FROST STAFF", rarity: "uncommon", price: 450, img: "frost_staff" },
+  void_blade:    { name: "VOID SHARD", rarity: "uncommon", price: 500, img: "void_blade" },
+  vine:          { name: "VINE BLADE", rarity: "uncommon", price: 500, img: "vine" },
+  bone:          { name: "BONE REAPER", rarity: "uncommon", price: 600, img: "bone" },
+  inferno:       { name: "INFERNO EDGE", rarity: "rare", price: 1200, img: "inferno", slash: "crimson" },
+  shadow:        { name: "SHADOW FANG", rarity: "rare", price: 1300, img: "shadow", slash: "shadow" },
+  gale:          { name: "GALE CRESCENT", rarity: "rare", price: 1400, img: "gale", slash: "aero" },
+  glacier:       { name: "GLACIER SWORD", rarity: "rare", price: 1500, img: "glacier", slash: "frostbite" },
+  phoenix:       { name: "PHOENIX BLADE", rarity: "legendary", price: 4000, img: "phoenix", slash: "dragon" },
+  plasma:        { name: "PLASMA SABER", rarity: "legendary", price: 4000, img: "plasma", slash: "laser" },
+  nebula:        { name: "NEBULA SWORD", rarity: "legendary", price: 4500, img: "nebula", slash: "voidbringer" },
+  seraph:        { name: "SERAPH WING", rarity: "legendary", price: 5000, img: "seraph", slash: "sun" },
+  ember_feather: { name: "EMBER FEATHER", rarity: "legendary", price: 5000, img: "ember_feather", slash: "feather" },
+  thunder:       { name: "THUNDER FANG", rarity: "legendary", price: 5500, img: "thunder", slash: "thunder" },
+  toxic:         { name: "PLAGUE BLADE", rarity: "legendary", price: 5500, img: "toxic", slash: "plague" },
+  gearblade:     { name: "CLOCKWORK BLADE", rarity: "legendary", price: 6000, img: "gearblade", slash: "clockwork" }
 };
 const fmt = (n) => n.toLocaleString("en-US");
 const skinState = Object.assign(
@@ -574,7 +657,8 @@ const player = {
   lungeV: 0,
   combo: 0,                  // which swing of the 3-hit combo comes next
   comboTimer: 0,
-  cd: [0, 0, 0],             // cooldowns of skills 1, 2 and 3
+  recover: 0,                // time left before a basic attack can start again (after the finisher)
+  mana: 100,                 // spent by skills 1, 2 and 3 (they have no cooldown of their own)
   stun: 0,                   // time left flinching after a hit
   inv: 0,                    // time left where nothing can hurt him (dash, skills)
   runT: 0,
@@ -624,7 +708,8 @@ function reset() {
   player.actT = 0;
   player.combo = 0;
   player.comboTimer = 0;
-  player.cd = [0, 0, 0];
+  player.recover = 0;
+  player.mana = MANA_MAX;
   player.stun = 0;
   player.inv = 0;
   player.lungeV = 0;
@@ -633,6 +718,7 @@ function reset() {
   runGold = 0;
   popups = [];
   sparks = [];
+  impacts = [];
   bossBanner = null;
   wave = 0;
   bgFrom = bgTo = 0; bgFade = 1;
@@ -687,7 +773,6 @@ function refreshSettingsLabels() {
     `BUTTON SIZE: ${BUTTON_SIZES[settings.btnSize].label}`;
   document.getElementById("soundBtn").textContent = `SOUND FX: ${settings.sound ? "ON" : "OFF"}`;
   document.getElementById("musicBtn").textContent = `MUSIC: ${settings.music ? "ON" : "OFF"}`;
-  document.getElementById("comfortBtn").textContent = `COMFORT MODE: ${settings.comfort ? "ON" : "OFF"}`;
   document.getElementById("resetHighBtn").textContent =
     resetArmed ? "TAP AGAIN TO CONFIRM" : "RESET HIGH SCORES";
   document.documentElement.style.setProperty("--btn-size", BUTTON_SIZES[settings.btnSize].size);
@@ -769,11 +854,6 @@ const menuActions = {
     saveSettings();
     refreshSettingsLabels();
   },
-  comfort: () => {
-    settings.comfort = !settings.comfort;
-    saveSettings();
-    refreshSettingsLabels();
-  },
   sound: () => {
     settings.sound = !settings.sound;
     saveSettings();
@@ -819,7 +899,7 @@ function swordCard(id) {
     <div class="tag" style="color:${info.color}">${info.label}</div>
     <button></button>`;
   const canvas = card.querySelector("canvas");
-  if (skin.fx || skin.glow) canvas.dataset.anim = id;   // animated while the menu is open
+  if (skin.fx || skin.glow || skin.slash) canvas.dataset.anim = id;   // animated while the menu is open
   drawSwordPreview(canvas, skin);
   return card;
 }
@@ -930,225 +1010,145 @@ function equipSkin(id) {
 
 function invMessage(text) { document.getElementById("invMsg").textContent = text; }
 
-// --- Customize: hats, scarf colours and the aura (the glow around him) ---
-// Everything is bought with gold. Each group keeps its own owned list and equipped item.
-const HATS = {
-  none:     { name: "NO HAT", price: 0 },
-  cap:      { name: "RED CAP", price: 50 },
+// --- Customize: the stickman's colour and accessories ---
+// He is always the yellow pixel stickman by default. Everything else is bought with gold.
+// Each group keeps its own owned list; the colour has one equipped item, accessories can be stacked.
+const COLORS = {
+  yellow: { name: "YELLOW", price: 0, filter: "" },
+  orange: { name: "ORANGE", price: 40, filter: "hue-rotate(-27deg)" },
+  red:    { name: "RED", price: 40, filter: "hue-rotate(-57deg) saturate(1.2)" },
+  green:  { name: "GREEN", price: 40, filter: "hue-rotate(63deg)" },
+  blue:   { name: "BLUE", price: 60, filter: "hue-rotate(158deg)" },
+  purple: { name: "PURPLE", price: 60, filter: "hue-rotate(218deg)" },
+  pink:   { name: "PINK", price: 60, filter: "hue-rotate(263deg) brightness(1.1)" },
+  white:  { name: "WHITE", price: 80, filter: "saturate(0) brightness(1.15)" },
+  shadow: { name: "SHADOW", price: 80, filter: "saturate(0) brightness(0.45)" },
+  rainbow: { name: "RAINBOW", price: 400, rainbow: true }
+};
+const ACCESSORIES = {
+  shades:   { name: "SUNGLASSES", price: 60 },
   headband: { name: "NINJA HEADBAND", price: 80 },
-  party:    { name: "PARTY HAT", price: 120 },
-  cowboy:   { name: "COWBOY HAT", price: 200 },
-  tophat:   { name: "TOP HAT", price: 350 },
-  viking:   { name: "VIKING HELMET", price: 600 },
-  wizard:   { name: "WIZARD HAT", price: 1000 },
-  crown:    { name: "GOLD CROWN", price: 2500 },
-  halo:     { name: "ANGEL HALO", price: 5000 }
-};
-const SCARVES = {
-  none:   { name: "NO SCARF", price: 0 },
-  red:    { name: "RED", price: 0, a: "#e53030", b: "#a31515" },
-  blue:   { name: "BLUE", price: 40, a: "#3a7bff", b: "#1f4bb0" },
-  green:  { name: "GREEN", price: 40, a: "#3fcf5a", b: "#1f8a35" },
-  purple: { name: "PURPLE", price: 60, a: "#a35cff", b: "#6a2fc0" },
-  pink:   { name: "PINK", price: 60, a: "#ff6fb5", b: "#c23a82" },
-  gold:   { name: "GOLD", price: 150, a: "#ffd34d", b: "#c9961a" },
-  rainbow: { name: "RAINBOW", price: 500, rainbow: true }
-};
-const AURAS = {
-  none:   { name: "NO AURA", price: 0 },
-  blue:   { name: "BLUE", price: 0, rgb: "70,160,255" },
-  red:    { name: "RED", price: 60, rgb: "255,90,70" },
-  green:  { name: "GREEN", price: 60, rgb: "80,220,120" },
-  purple: { name: "PURPLE", price: 100, rgb: "178,102,255" },
-  gold:   { name: "GOLD", price: 200, rgb: "255,200,60" },
-  rainbow: { name: "RAINBOW", price: 600, rainbow: true }
+  scarf:    { name: "RED SCARF", price: 100 },
+  bowtie:   { name: "BOW TIE", price: 120 },
+  eyepatch: { name: "EYE PATCH", price: 150 },
+  monocle:  { name: "GOLD MONOCLE", price: 200 }
 };
 const LOOK_GROUPS = {
-  hat:   { label: "HATS", items: HATS },
-  scarf: { label: "SCARF", items: SCARVES },
-  aura:  { label: "AURA", items: AURAS }
+  color: { label: "COLOR", items: COLORS },
+  acc:   { label: "ACCESSORIES", items: ACCESSORIES, multi: true }
 };
-const look = Object.assign(
-  { owned: { hat: ["none"], scarf: ["red"], aura: ["blue"] }, equipped: { hat: "none", scarf: "red", aura: "blue" } },
-  JSON.parse(localStorage.getItem("stickgo-look") || "{}")
-);
-for (const [group, info] of Object.entries(LOOK_GROUPS)) {   // forget anything that is no longer sold
-  look.owned[group] = (look.owned[group] || []).filter((id) => info.items[id]);
-  if (info.items.none && !look.owned[group].includes("none")) look.owned[group].unshift("none");   // "none" is always free
-  if (!look.owned[group].length) look.owned[group] = [Object.keys(info.items)[0]];
-  if (!look.owned[group].includes(look.equipped[group])) look.equipped[group] = look.owned[group][0];
-}
-function saveLook() { localStorage.setItem("stickgo-look", JSON.stringify(look)); }
+const look = { owned: { color: ["yellow"], acc: [] }, equipped: { color: "yellow", acc: [] } };
+try {
+  const saved = JSON.parse(localStorage.getItem("stickgo-look2") || "{}");
+  if (saved.owned && saved.equipped) {
+    look.owned.color = (saved.owned.color || []).filter((id) => COLORS[id]);
+    look.owned.acc = (saved.owned.acc || []).filter((id) => ACCESSORIES[id]);
+    look.equipped.color = saved.equipped.color;
+    look.equipped.acc = (saved.equipped.acc || []).filter((id) => look.owned.acc.includes(id));
+  }
+} catch (e) { /* a broken save just means the defaults */ }
+if (!look.owned.color.includes("yellow")) look.owned.color.unshift("yellow");   // yellow is always the default
+if (!look.owned.color.includes(look.equipped.color)) look.equipped.color = "yellow";
+function saveLook() { localStorage.setItem("stickgo-look2", JSON.stringify(look)); }
 
-// Rainbow items drift slowly through the colours (a gentle fade, not a flash)
-function rainbowHue() { return (performance.now() / 1000 * 50) % 360; }
-function scarfColors() {
-  const s = SCARVES[look.equipped.scarf] || SCARVES.red;
-  if (!s.rainbow) return s;
-  const h = rainbowHue();
-  return { a: `hsl(${h}, 85%, 58%)`, b: `hsl(${(h + 25) % 360}, 85%, 40%)` };
-}
-function auraColors() {
-  const a = AURAS[look.equipped.aura] || AURAS.blue;
-  if (a.rainbow) { const h = rainbowHue(); return { front: `hsla(${h}, 100%, 60%, 0.30)`, back: `hsla(${h}, 100%, 60%, 0.16)` }; }
-  return { front: `rgba(${a.rgb}, 0.30)`, back: `rgba(${a.rgb}, 0.16)` };
+// Rainbow drifts slowly through the colours (a gentle fade, not a flash)
+function colorFilter(id) {
+  const c = COLORS[id] || COLORS.yellow;
+  if (c.rainbow) return `hue-rotate(${Math.round((performance.now() / 1000 * 50) % 360)}deg)`;
+  return c.filter;
 }
 
-// Each hat is drawn upright around the head's centre (the head is a circle of radius 8, he
-// faces right); drawHat tilts it with his head.
-function drawHatShape(id, t) {
-  ctx.lineJoin = "round";
-  ctx.lineCap = "round";
-  const poly = (color, pts) => {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(pts[0][0], pts[0][1]);
-    for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]);
-    ctx.closePath();
-    ctx.fill();
-  };
-  const dome = (color, r, cy) => {
-    ctx.fillStyle = color;
-    ctx.beginPath(); ctx.arc(0, cy, r, Math.PI, 0); ctx.closePath(); ctx.fill();
-  };
+// Where his head is in every frame of every sheet: [x, y] in frame pixels, so accessories can
+// follow it (found by tools/find_hero_heads.py). The head is a circle about 6 pixels in radius.
+const HERO_HEADS = {"idle":[[58,16],[58,18],[58,18],[58,16]],"run":[[72,29],[70,28],[71,27],[70,28],[71,29],[72,29],[70,28],[71,27],[70,28],[71,29]],"jump":[[69,9],[71,7],[69,9]],"jump_peak":[[64,8],[60,8],[58,8]],"fall":[[58,7],[59,7],[59,7],[59,7]],"dash":[[56,28],[56,28],[56,28],[56,28],[56,28],[56,28],[59,31],[59,31],[59,31],[59,31],[59,31]],"attack1":[[57,26],[59,26],[61,22],[60,22],[54,22],[51,32],[50,34],[54,21],[54,15],[54,14]],"attack2":[[58,32],[60,23],[58,24],[58,24],[59,22],[62,26],[64,24],[58,24]],"attack3":[[56,23],[66,29],[63,28],[68,33],[68,33],[68,24],[64,22],[62,16],[60,18],[60,16]],"skill1":[[55,39],[55,40],[55,40],[55,40],[64,24],[64,24],[68,23],[68,23],[68,23]],"skill2":[[65,19],[67,18],[66,18],[65,20],[66,18],[68,20],[65,18],[65,18],[66,18],[56,23],[66,29],[63,28],[68,33],[68,33],[68,24],[64,22],[62,16],[60,18],[60,16]],"skill3":[[60,17],[55,19],[57,14],[57,14],[60,18],[86,18],[87,21],[87,21],[67,24],[69,23],[76,21],[76,12],[81,18],[72,20],[72,20],[72,20],[72,20],[72,20],[72,20],[52,14],[60,17],[60,22],[57,17],[57,17],[58,16]],"start_skill3":[[58,20],[62,21],[61,21]],"hit1":[[45,18],[45,18],[45,18]],"hit3":[[58,22],[58,22],[58,22]]};
+
+// Pixel-art accessories, drawn around the head's centre (hx, hy) in sprite pixels. He faces right.
+function drawAccessory(id, hx, hy) {
+  const px = (color, x, y, w, h) => { ctx.fillStyle = color; ctx.fillRect(Math.round(hx + x), Math.round(hy + y), w, h); };
   switch (id) {
-    case "cap":
-      dome("#d62c2c", 8.7, -3.6);
-      ctx.fillStyle = "#a31d1d";
-      ctx.beginPath(); ctx.moveTo(2, -4.4); ctx.quadraticCurveTo(12, -6.5, 15, -2.4); ctx.lineTo(2, -2.8); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, -12.3, 1.3, 0, Math.PI * 2); ctx.fill();
+    case "shades":
+      px("#111", -5, -3, 12, 1);
+      px("#111", 0, -3, 7, 4);
+      px("#8fd0ff", 1, -2, 2, 1);
       break;
-    case "headband": {
-      const w = Math.sin(t * 8) * 2;
-      ctx.strokeStyle = "#e53030";
-      ctx.lineWidth = 3.2;
-      ctx.beginPath(); ctx.moveTo(-7.4, -5.2); ctx.lineTo(7.4, -5.2); ctx.stroke();
-      ctx.lineWidth = 2.6;
-      ctx.beginPath(); ctx.moveTo(-7, -5); ctx.quadraticCurveTo(-13, -4 + w, -19, -1 + w * 1.5); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-7, -4.2); ctx.quadraticCurveTo(-12, -1 - w, -17, 2 - w); ctx.stroke();
+    case "headband":
+      px("#e53030", -6, -4, 12, 2);
+      px("#e53030", -9, -3, 3, 1);
+      px("#a31515", -11, -1, 4, 1);
+      px("#e53030", -9, 0, 3, 1);
       break;
-    }
-    case "party":
-      poly("#ff5fa8", [[-6, -6.4], [6, -6.4], [0.5, -21]]);
-      ctx.strokeStyle = "#ffe14d"; ctx.lineWidth = 1.6;
-      for (const [y, hw] of [[-9.5, 4.8], [-13.5, 3.4], [-17, 2]]) { ctx.beginPath(); ctx.moveTo(0.3 - hw, y); ctx.lineTo(0.3 + hw, y); ctx.stroke(); }
-      ctx.fillStyle = "#ffe14d"; ctx.beginPath(); ctx.arc(0.5, -21.5, 2.2, 0, Math.PI * 2); ctx.fill();
+    case "scarf":
+      px("#e53030", -5, 5, 11, 3);
+      px("#a31515", -5, 7, 11, 1);
+      px("#e53030", -9, 6, 4, 2);
+      px("#a31515", -12, 8, 5, 2);
       break;
-    case "cowboy":
-      ctx.fillStyle = "#8b5a2b";
-      ctx.beginPath(); ctx.ellipse(0, -6.8, 15, 3.2, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#a06a35";
-      ctx.beginPath(); ctx.moveTo(-6.6, -7); ctx.lineTo(-5.6, -16); ctx.quadraticCurveTo(0, -13.2, 5.6, -16); ctx.lineTo(6.6, -7); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = "#5a3a1a"; ctx.fillRect(-6.6, -9.8, 13.2, 2.2);
+    case "bowtie":
+      px("#d02020", -5, 6, 4, 4);
+      px("#d02020", 2, 6, 4, 4);
+      px("#7a1010", -1, 7, 3, 2);
       break;
-    case "tophat":
-      ctx.fillStyle = "#16161d";
-      ctx.fillRect(-10.5, -8.8, 21, 2.6);
-      ctx.fillRect(-6.6, -22, 13.2, 13.6);
-      ctx.fillStyle = "#b33"; ctx.fillRect(-6.6, -11.8, 13.2, 3);
+    case "eyepatch":
+      px("#111", -6, -3, 12, 1);
+      px("#111", 2, -2, 4, 4);
       break;
-    case "viking":
-      dome("#9aa3ad", 8.8, -4);
-      ctx.fillStyle = "#6a5030"; ctx.fillRect(-8.8, -6.4, 17.6, 2.4);
-      ctx.strokeStyle = "#f1e9d0"; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(-7.8, -6); ctx.quadraticCurveTo(-14, -8, -11.5, -17); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(7.8, -6); ctx.quadraticCurveTo(14, -8, 11.5, -17); ctx.stroke();
-      break;
-    case "wizard":
-      ctx.fillStyle = "#4b2a8c";
-      ctx.beginPath(); ctx.ellipse(0, -6.6, 12.5, 2.8, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#6a3cc4";
-      ctx.beginPath(); ctx.moveTo(-8, -6.8); ctx.quadraticCurveTo(-4, -22, 8, -30); ctx.quadraticCurveTo(5, -16, 8, -6.8); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = "#ffe14d";
-      for (const [x, y, r] of [[0.5, -13, 1.5], [3.4, -21, 1.2]]) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
-      break;
-    case "crown":
-      poly("#ffd34d", [[-7, -6.6], [-8, -16.5], [-3.7, -11.8], [0, -18.5], [3.7, -11.8], [8, -16.5], [7, -6.6]]);
-      ctx.strokeStyle = "#a8740a"; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(-7, -6.6); ctx.lineTo(-8, -16.5); ctx.lineTo(-3.7, -11.8); ctx.lineTo(0, -18.5); ctx.lineTo(3.7, -11.8); ctx.lineTo(8, -16.5); ctx.lineTo(7, -6.6); ctx.closePath(); ctx.stroke();
-      for (const [x, c] of [[-4.2, "#3a7bff"], [0, "#e03030"], [4.2, "#3fcf5a"]]) { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, -9.3, 1.3, 0, Math.PI * 2); ctx.fill(); }
-      break;
-    case "halo":
-      ctx.strokeStyle = "#ffe27a"; ctx.lineWidth = 2.2;
-      ctx.shadowColor = "#ffd34d"; ctx.shadowBlur = 6;
-      ctx.beginPath(); ctx.ellipse(0, -15 + Math.sin(t * 3) * 0.8, 8.5, 2.6, 0, 0, Math.PI * 2); ctx.stroke();
-      ctx.shadowBlur = 0;
+    case "monocle":
+      px("#e8b923", 2, -3, 5, 1);
+      px("#e8b923", 2, 1, 5, 1);
+      px("#e8b923", 2, -2, 1, 3);
+      px("#e8b923", 6, -2, 1, 3);
+      px("rgba(200,235,255,0.55)", 3, -2, 3, 3);
+      px("#e8b923", 4, 2, 1, 6);
       break;
   }
 }
 
-function drawHat(id, head, neck) {
-  if (!id || id === "none") return;
-  ctx.save();
-  ctx.translate(head.x, head.y);
-  ctx.rotate(Math.atan2(head.x - neck.x, -(head.y - neck.y)));   // follow the tilt of his head
-  drawHatShape(id, performance.now() / 1000);
-  ctx.restore();
+function drawAccessories(accs, sheet, frame) {
+  const head = (HERO_HEADS[sheet] || [])[frame];
+  if (!head) return;
+  for (const id of accs) drawAccessory(id, head[0], head[1]);
 }
 
 // Draws into another canvas by pointing ctx at it for a moment
 function withContext(g, fn) {
   const savedCtx = ctx, savedColors = colors;
   ctx = g;
-  colors = paletteAt(0);          // the day colours, so the dark hero shows on the light preview
+  colors = paletteAt(0);          // the day colours, so everything shows on the light preview
   try { fn(); } finally { ctx = savedCtx; colors = savedColors; }
 }
 
-let lookPhase = 0;
+// The big preview: the idle stickman as he will look in the game
 function drawLookPreview() {
   const cv = document.getElementById("lookPreview");
   const g = cv.getContext("2d");
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, cv.width, cv.height);
-  const S = cv.height / 92;
-  g.setTransform(S, 0, 0, S, cv.width / 2 - 11 * S, 30 * S);
-  withContext(g, () => {
-    const pose = getPose({ runPhase: lookPhase, onGround: true, ducking: false, vy: 0, attack: 0, x: 0, y: 0, w: 26, h: 60 });
-    drawHero(pose, false);
-    drawSword(pose, false);
-  });
+  const sc = 4.2;
+  const fr = stateFrame(HS.idle, (performance.now() / 1000 * (HS.idle.fps || 8)) % HS.idle.frames.length);
+  withContext(g, () => drawSprite(fr.sheet, fr.frame, cv.width / 2 + 6 * sc, cv.height - 28, 1, 0, sc));
 }
 
 function drawLookIcon(cv, group, id) {
   const g = cv.getContext("2d");
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, cv.width, cv.height);
-  const item = LOOK_GROUPS[group].items[id];
-  const hue = rainbowHue();
-  if (group === "hat") {
-    const S = cv.height / 42;
-    g.setTransform(S, 0, 0, S, cv.width / 2, cv.height * 0.78);
-    withContext(g, () => {
-      g.fillStyle = "#2a2a36";
-      g.beginPath(); g.arc(0, 0, 8, 0, Math.PI * 2); g.fill();
-      g.fillStyle = "#cfe7ff";
-      g.beginPath(); g.ellipse(2.6, -0.8, 1.5, 2.2, 0.18, 0, Math.PI * 2); g.fill();
-      drawHatShape(id, performance.now() / 1000);
-    });
-  } else if (group === "scarf") {
-    const a = item.rainbow ? `hsl(${hue}, 85%, 58%)` : item.a, b = item.rainbow ? `hsl(${(hue + 25) % 360}, 85%, 40%)` : item.b;
-    g.lineCap = "round";
-    g.lineWidth = 11;
-    g.strokeStyle = b;
-    g.beginPath(); g.moveTo(cv.width * 0.72, cv.height * 0.44); g.quadraticCurveTo(cv.width * 0.45, cv.height * 0.62, cv.width * 0.12, cv.height * 0.8); g.stroke();
-    g.strokeStyle = a;
-    g.beginPath(); g.moveTo(cv.width * 0.72, cv.height * 0.4); g.quadraticCurveTo(cv.width * 0.45, cv.height * 0.3, cv.width * 0.1, cv.height * 0.42); g.stroke();
-    g.fillStyle = a;
-    g.beginPath(); g.arc(cv.width * 0.74, cv.height * 0.42, 11, 0, Math.PI * 2); g.fill();
+  if (group === "color") {
+    const sc = 1.8, fr = stateFrame(HS.idle, 0);
+    withContext(g, () => drawSprite(fr.sheet, fr.frame, cv.width / 2 + 6 * sc, cv.height - 6, 1, 0, sc, id, []));
   } else {
-    const c = item.rainbow ? `${hue}, 100%, 60%` : null;
-    const cx = cv.width / 2, cy = cv.height / 2;
-    const grad = g.createRadialGradient(cx, cy, 8, cx, cy, 58);
-    grad.addColorStop(0, item.rainbow ? `hsla(${c}, 0.85)` : `rgba(${item.rgb}, 0.85)`);
-    grad.addColorStop(1, item.rainbow ? `hsla(${c}, 0)` : `rgba(${item.rgb}, 0)`);
-    g.fillStyle = grad;
-    g.beginPath(); g.arc(cx, cy, 58, 0, Math.PI * 2); g.fill();
-    g.fillStyle = "#1a1a22";
-    g.beginPath(); g.arc(cx, cy, 18, 0, Math.PI * 2); g.fill();
+    const S = cv.height / 24;
+    g.setTransform(S, 0, 0, S, cv.width / 2, cv.height * 0.45);
+    withContext(g, () => {
+      g.fillStyle = "#fbf236";
+      g.beginPath(); g.arc(0, 0, 6, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#d0c817";
+      g.fillRect(-1, 5, 2, 9);
+      drawAccessory(id, 0, 0);
+    });
   }
 }
 
-let lookTab = "hat";
+let lookTab = "color";
 let lookTimer = null;
 
 function refreshLook() {
@@ -1165,21 +1165,21 @@ function refreshLook() {
     tab.addEventListener("click", () => { lookTab = group; lookMessage(""); refreshLook(); });
     tabs.appendChild(tab);
   }
+  const multi = LOOK_GROUPS[lookTab].multi;
   for (const [id, item] of Object.entries(LOOK_GROUPS[lookTab].items)) {
-    if (id === "none") continue;   // "none" is just the unequipped state, tapped off via UNEQUIP
     const owned = look.owned[lookTab].includes(id);
-    const equipped = look.equipped[lookTab] === id;
+    const equipped = multi ? look.equipped[lookTab].includes(id) : look.equipped[lookTab] === id;
     const card = document.createElement("div");
     card.className = "card" + (equipped ? " equipped" : "");
     card.style.setProperty("--rar", "#ff8a1f");
     card.innerHTML = `<canvas width="192" height="120"></canvas><div class="name">${item.name}</div><button></button>`;
     const cv = card.querySelector("canvas");
-    if (item.rainbow || id === "headband" || id === "halo") cv.dataset.anim = id;
+    if (item.rainbow) cv.dataset.anim = id;
     cv.dataset.group = lookTab;
     cv.dataset.id = id;
     drawLookIcon(cv, lookTab, id);
     const btn = card.querySelector("button");
-    if (equipped) btn.textContent = LOOK_GROUPS[lookTab].items.none && id !== "none" ? "UNEQUIP" : "EQUIPPED";
+    if (equipped) btn.textContent = multi ? "TAKE OFF" : "EQUIPPED";
     else if (owned) btn.textContent = "EQUIP";
     else { btn.innerHTML = `<span class="coin"></span>${fmt(item.price)}`; btn.classList.toggle("cant", totalGold < item.price); }
     btn.addEventListener("click", () => lookTap(lookTab, id));
@@ -1190,7 +1190,7 @@ function refreshLook() {
 
 // Tapping an item equips it; if you don't own it yet it is bought first
 function lookTap(group, id) {
-  const item = LOOK_GROUPS[group].items[id];
+  const info = LOOK_GROUPS[group], item = info.items[id];
   if (!look.owned[group].includes(id)) {
     if (totalGold < item.price) { lookMessage(`NOT ENOUGH GOLD — NEED ${fmt(item.price - totalGold)} MORE`); return; }
     totalGold -= item.price;
@@ -1198,22 +1198,25 @@ function lookTap(group, id) {
     look.owned[group].push(id);
     sfx.coin();
   }
-  // Tapping the worn hat takes it off
-  if (id !== "none" && LOOK_GROUPS[group].items.none && look.equipped[group] === id) id = "none";
-  look.equipped[group] = id;
+  if (info.multi) {   // accessories: tapping a worn one takes it off
+    const worn = look.equipped[group];
+    if (worn.includes(id)) { worn.splice(worn.indexOf(id), 1); lookMessage(`${item.name} TAKEN OFF`); }
+    else { worn.push(id); lookMessage(`${item.name} EQUIPPED`); }
+  } else {
+    look.equipped[group] = id;
+    lookMessage(`${item.name} EQUIPPED`);
+  }
   saveLook();
-  lookMessage(id === "none" ? `${LOOK_GROUPS[group].label} REMOVED` : `${item.name} EQUIPPED`);
   refreshLook();
 }
 
 function lookMessage(text) { document.getElementById("lookMsg").textContent = text; }
 
-// Keeps the preview running and the animated items (rainbow, headband, halo) moving
+// Keeps the preview running and the animated items (rainbow) moving
 function animateLook() {
   if (!menus.look.classList.contains("open")) { clearInterval(lookTimer); lookTimer = null; return; }
   if (lookTimer) return;
   lookTimer = setInterval(() => {
-    lookPhase += 0.45;
     drawLookPreview();
     for (const cv of document.querySelectorAll("#lookItems canvas[data-anim]")) drawLookIcon(cv, cv.dataset.group, cv.dataset.id);
   }, 70);
@@ -1297,12 +1300,38 @@ function musicTone(freq, t, dur, type, vol, slideTo) {
   osc.stop(t + dur);
 }
 
-function musicNoise(t, dur, vol) {
+function noiseBuffer() {
   if (!noiseBuf) {
     noiseBuf = audio.createBuffer(1, audio.sampleRate * 0.1, audio.sampleRate);
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   }
+  return noiseBuf;
+}
+
+// A swish of filtered noise whose pitch sweeps from `from` to `to` Hz (whooshes, crackles, thunder)
+function whoosh(dur, vol, from, to, delay = 0) {
+  if (!settings.sound || !audio || audio.state !== "running") return;
+  const t = audio.currentTime + delay;
+  const src = audio.createBufferSource();
+  const filter = audio.createBiquadFilter();
+  const gain = audio.createGain();
+  src.buffer = noiseBuffer();
+  src.loop = true;
+  filter.type = "bandpass";
+  filter.Q.value = 1.4;
+  filter.frequency.setValueAtTime(from, t);
+  filter.frequency.exponentialRampToValueAtTime(to, t + dur);
+  gain.gain.setValueAtTime(0.001, t);
+  gain.gain.exponentialRampToValueAtTime(vol, t + dur * 0.15);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(filter).connect(gain).connect(audio.destination);
+  src.start(t);
+  src.stop(t + dur + 0.02);
+}
+
+function musicNoise(t, dur, vol) {
+  noiseBuffer();
   const src = audio.createBufferSource();
   const gain = audio.createGain();
   src.buffer = noiseBuf;
@@ -1510,7 +1539,7 @@ function dropGold(x, y, count, popupY = y - 26) {
 
 // --- The hero: yellow stickman sprite sheets (128x64 frames, facing right) ---
 const SHEET_FRAMES = { idle: 4, run: 10, jump: 3, jump_peak: 3, fall: 4, dash: 11,
-  attack1: 10, attack2: 8, attack3: 10, skill1: 9, skill2: 19, skill3: 25, start_skill3: 3, hit1: 3, hit3: 3 };
+  attack1: 10, attack2: 8, attack3: 10, skill1: 9, skill2: 19, skill3: 25, start_skill3: 3, hit1: 3, hit3: 3, death: 10 };
 const SHEETS = {};
 for (const name of Object.keys(SHEET_FRAMES)) {
   const img = new Image();
@@ -1557,6 +1586,9 @@ const SKILLS = ANIM.hero.skills.map((id) => prep(ANIM.hero.actions[id]));
 // at both edges. Enemies each have a trick of their own; every wave 5 a boss shows up.
 const PLAYER_SPEED = 230;      // px/s
 const PLAYER_MAX_HP = 100;
+// Mana: skills 1, 2 and 3 cost mana instead of having cooldowns. It refills over time and each kill gives some back.
+const MANA_MAX = 100, MANA_REGEN = 6, MANA_PER_KILL = 6;
+const SKILL_MANA = [25, 40, 100];
 const HURT_TIME = 0.9;         // s he can't be hurt again after a hit
 const DIFF_MUL = { easy: 0.8, normal: 1, hard: 1.25 };   // enemy speed and spawn rate
 // stand = how close it gets before it acts; dmg = damage to the hero; pts = score for a kill
@@ -1794,7 +1826,9 @@ function startAction(spec) {
   player.fired = spec.hits.map(() => false);
   player.buffered = false;
   player.lungeV = spec.lunge || 0;
-  if (spec.skill) sfx.skill(); else sfx.slash();
+  if (spec.skill) sfx.skill();
+  else if (spec.basic && weaponFx()) weaponFx().swing();   // rare and legendary weapons have their own swing
+  else sfx.slash();
 }
 
 // Lands one hit of the current action on every enemy in its reach
@@ -1813,28 +1847,32 @@ function dealHit(hit) {
       popups.push({ x: ocx, y: o.y - 10, t: 0, text: "BLOCK" });
       continue;
     }
-    hurtFoe(o, hit.dmg, f * hit.kb);
+    // Only the 3rd swing of the combo staggers; the first two just hurt, so enemies can still fight back
+    const light = player.act && player.act.basic && player.act !== COMBO[COMBO.length - 1];
+    hurtFoe(o, hit.dmg, f * hit.kb * (light ? LIGHT_PUSH : 1), !light);
   }
   foes = foes.filter((o) => !o.dead);
 }
 
-function hurtFoe(o, dmg, push) {
+function hurtFoe(o, dmg, push, stagger = true) {
   o.hp -= dmg;
   if (o.hp <= 0) {
     const d = FOES[o.kind];
     o.fling = Math.sign(push) || player.facing;
     killEnemy(o, randInt(d.gold[0], d.gold[1]));
     kills++;
+    player.mana = Math.min(MANA_MAX, player.mana + MANA_PER_KILL);
     score += d.pts;
     return;
   }
   const heavy = o.kind === "brute" || o.kind === "boss";
   o.x = Math.max(-10, Math.min(W + 10 - o.w, o.x + push * (heavy ? 0.3 : 1)));
-  if (o.kind !== "boss" && o.ai !== "charge") { o.stagger = heavy ? 0.2 : 0.4; o.ai = "walk"; o.timer = 0; o.attack = 0; o.draw = 0; }
+  if (stagger && o.kind !== "boss" && o.ai !== "charge") { o.stagger = heavy ? 0.2 : 0.4; o.ai = "walk"; o.timer = 0; o.attack = 0; o.draw = 0; }
   o.flash = 0.12;
   shakeTime = Math.max(shakeTime, 0.08);
-  burst(o.x + o.w / 2, o.y + 40, 8, "#ffe14d", 240);
   popups.push({ x: o.x + o.w / 2, y: o.y - 10, t: 0, text: String(dmg) });
+  if (player.act && player.act.basic && weaponFx()) { weaponImpact(o); return; }
+  burst(o.x + o.w / 2, o.y + 40, 8, "#ffe14d", 240);
   sfx.clang();
 }
 
@@ -1845,6 +1883,12 @@ function actionTick(dt) {
     if (!player.fired[i] && player.actT >= spec.hitT[i]) { player.fired[i] = true; dealHit(h); }
   });
   if (spec.invuln) player.inv = Math.max(player.inv, 0.1);
+  const sp = slashProgress();
+  if (sp >= 0) {   // the tip of a rare or legendary slash sheds sparks as it travels
+    const u = slashAngle(sp), fx = weaponFx();
+    const tx = player.x + player.w / 2 + Math.cos(u) * 62 * player.facing, ty = player.y + player.h - 36 + Math.sin(u) * 62;
+    for (let i = 0; i < (weaponIsLegendary() ? 3 : 2); i++) burst(tx, ty, 1, fx.sparks[randInt(0, fx.sparks.length - 1)], 120);
+  }
   if (player.lungeV) {   // a short step into the swing that fades quickly
     player.x = Math.max(8, Math.min(W - 8 - player.w, player.x + player.facing * player.lungeV * dt));
     player.lungeV *= Math.pow(0.02, dt);
@@ -1854,11 +1898,24 @@ function actionTick(dt) {
   if (player.actT >= spec.total) {
     player.act = null;
     if (spec.basic) {
+      if (spec === COMBO[COMBO.length - 1]) player.recover = COMBO_RECOVERY;   // the finisher leaves him open
       player.combo = (player.combo + 1) % COMBO.length;
       player.comboTimer = 0.5;
       if (player.buffered) queued.attack = 0.2;   // chain straight into the next swing
     }
   }
+}
+
+// The cooldown clock on a skill button: shaded sweep plus the seconds left; a pop when it's ready again
+function showCooldown(btn, left, max) {
+  const cooling = left > 0;
+  if (cooling) {
+    btn.style.setProperty("--cd", (left / max).toFixed(3));
+    btn.lastChild.textContent = left < 10 ? left.toFixed(1) : String(Math.ceil(left));
+  }
+  if (btn.classList.contains("cooling") === cooling) return;
+  btn.classList.toggle("cooling", cooling);
+  if (!cooling) { btn.classList.remove("ready"); void btn.offsetWidth; btn.classList.add("ready"); }
 }
 
 // --- Update ---
@@ -1867,8 +1924,9 @@ function update(dt) {
   player.hurt = Math.max(0, player.hurt - dt);
   player.inv = Math.max(0, player.inv - dt);
   player.stun = Math.max(0, player.stun - dt);
+  player.recover = Math.max(0, player.recover - dt);
   player.dashCooldown = Math.max(0, player.dashCooldown - dt);
-  player.cd = player.cd.map((c) => Math.max(0, c - dt));
+  player.mana = Math.min(MANA_MAX, player.mana + MANA_REGEN * dt);
   if (!player.act) {
     player.comboTimer = Math.max(0, player.comboTimer - dt);
     if (player.comboTimer === 0) player.combo = 0;
@@ -1878,14 +1936,14 @@ function update(dt) {
   const free = !player.act && player.stun <= 0 && player.dash <= 0;
   if (free) {   // skills first (3, then 2, then 1), then the basic attack
     for (const i of [2, 1, 0]) {
-      if (queued["s" + (i + 1)] > 0 && player.cd[i] <= 0) {
+      if (queued["s" + (i + 1)] > 0 && player.mana >= SKILL_MANA[i]) {
         queued["s" + (i + 1)] = 0;
-        player.cd[i] = SKILLS[i].cd;
+        player.mana -= SKILL_MANA[i];
         startAction(SKILLS[i]);
         break;
       }
     }
-    if (!player.act && queued.attack > 0) { queued.attack = 0; startAction(COMBO[player.combo]); }
+    if (!player.act && player.recover <= 0 && queued.attack > 0) { queued.attack = 0; startAction(COMBO[player.combo]); }
   }
 
   // Walking, or the dash
@@ -1927,8 +1985,10 @@ function update(dt) {
   }
   if (player.onGround) player.y = GROUND_Y - player.h;
 
-  dashBtn.classList.toggle("cooling", player.dashCooldown > 0);
-  [sk1Btn, sk2Btn, sk3Btn].forEach((b, i) => b.classList.toggle("cooling", player.cd[i] > 0));
+  // The clock on a skill shows how long until there's enough mana for it
+  [[dashBtn, player.dashCooldown, DASH_COOLDOWN],
+   ...[sk1Btn, sk2Btn, sk3Btn].map((b, i) => [b, Math.max(0, SKILL_MANA[i] - player.mana) / MANA_REGEN, SKILL_MANA[i] / MANA_REGEN])
+  ].forEach(([b, left, max]) => showCooldown(b, left, max));
   if (hintTimer > 0) {
     hintTimer -= dt;
     if (hintTimer <= 2) document.body.classList.remove("show-hint");   // then it fades over those last 2 s
@@ -1971,6 +2031,8 @@ function update(dt) {
     p.y += p.vy * dt;
   }
   sparks = sparks.filter((p) => p.t < p.life);
+  for (const m of impacts) m.t += dt;
+  impacts = impacts.filter((m) => m.t < 0.3);
   updateCoins(dt);
   corpses = corpses.filter((c) => c.t < 3.5);   // bodies fade away after a few seconds
 }
@@ -2087,8 +2149,7 @@ let colors;
 let night = 0;
 
 function nightLevel(s) {
-  return 1;   // the forest backdrop is a dusk scene, so the light-on-dark palette is always on
-  if (settings.comfort) return 1;   // Comfort Mode keeps the screen dark instead of bright white
+  return 1;   // the backdrops are dusk scenes, so the light-on-dark palette is always on
   const p = s % 1000;
   return Math.max(0, Math.min(1, (p - 650) / 50, (1000 - p) / 50));
 }
@@ -2267,7 +2328,7 @@ function drawSword(pts, swinging) {
     if (tipAngle < 0) tipAngle += Math.PI * 2;  // the swing starts past straight up
     const now = Math.PI / 2 - tipAngle;         // limb() angle -> canvas arc angle
     const from = Math.max(Math.PI / 2 - (SWING_FROM + 0.15), now - 2.1);
-    const fx = SLASH_FX[skinState.equipped];
+    const fx = SLASH_FX[equippedSkin().slash];
     if (fx) {
       // Rare and legendary swords leave their own slash instead of the plain arc
       ctx.save();
@@ -2438,8 +2499,177 @@ const SLASH_FX = {
       const p = arcPt(s, s.r + 6 + rnd(i * 2 + s.seed) * 18, s.from + (s.now - s.from) * (0.3 + 0.2 * i));
       sparkle4(p.x, p.y, 3 + rnd(i + s.seed) * 3, "#fffbe0");
     }
+  },
+  feather(s) {
+    crescent(s, 24, "rgba(255, 90, 20, 0.45)");
+    crescent(s, 14, "rgba(255, 166, 77, 0.85)");
+    crescent(s, 5, "#fff0c0", 1.1);
+    for (let i = 0; i < 6; i++) {   // burning feathers shed along the cut
+      const f = 0.2 + 0.13 * i, u = s.from + (s.now - s.from) * f;
+      const p = arcPt(s, s.r + 8 + rnd(i + s.seed * 0.1) * 16, u);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(u + Math.PI / 2 + Math.sin(s.clock * 9 + i) * 0.4);
+      ctx.fillStyle = i % 2 ? "#ff8a2a" : "#ff5a1f";
+      ctx.beginPath(); ctx.ellipse(0, 0, 7, 2.6, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#ffe0a0"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(7, 0); ctx.stroke();
+      ctx.restore();
+    }
+    specks(s, 16, 40, 1.6, "#ffd36a", false);
+  },
+  thunder(s) {
+    crescent(s, 14, "rgba(255, 240, 77, 0.45)");
+    crescent(s, 4, "#ffffff", 1.1);
+    for (let b = 0; b < 3; b++) {   // forked lightning crackling along the swing
+      const pts = [];
+      for (let k = 0; k <= 10; k++) {
+        const f = k / 10, u = s.from + (s.now - s.from) * f;
+        pts.push(arcPt(s, s.r + (rnd(b * 13 + k * 3.7 + s.seed) - 0.5) * 26 * f, u));
+      }
+      for (const [w, c] of [[3.2, "rgba(255, 230, 60, 0.9)"], [1.2, "#ffffff"]]) {
+        ctx.strokeStyle = c; ctx.lineWidth = w;
+        ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+        for (const p of pts) ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+      }
+    }
+    spikes(s, 6, 18, "rgba(255, 250, 200, 0.9)", 1.2);
+    specks(s, 14, 40, 1.4, "#bfeaff", false);
+  },
+  plague(s) {
+    crescent(s, 24, "rgba(30, 140, 60, 0.45)");
+    crescent(s, 12, "rgba(93, 255, 154, 0.7)");
+    crescent(s, 4, "#d8ffe4", 1.1);
+    ctx.strokeStyle = "rgba(157, 255, 184, 0.9)";   // toxic bubbles
+    ctx.lineWidth = 1.4;
+    for (let i = 0; i < 7; i++) {
+      const p = arcPt(s, s.r + (rnd(i * 4.1 + s.seed) - 0.3) * 30, s.from + (s.now - s.from) * (0.2 + 0.11 * i));
+      ctx.beginPath(); ctx.arc(p.x, p.y, 1.5 + rnd(i + s.seed) * 3, 0, Math.PI * 2); ctx.stroke();
+    }
+    const p = arcPt(s, s.r + 14, s.now - 0.3);   // a little skull riding the cut
+    ctx.fillStyle = "#d8ffe4";
+    ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(p.x - 3, p.y + 3, 6, 3.5);
+    ctx.fillStyle = "#0d3a1a";
+    ctx.fillRect(p.x - 3, p.y - 1.5, 2.2, 2.2); ctx.fillRect(p.x + 0.8, p.y - 1.5, 2.2, 2.2);
+    specks(s, 10, 36, 1.4, "#3fcf5a", false);
+  },
+  clockwork(s) {
+    crescent(s, 18, "rgba(201, 138, 58, 0.5)");
+    crescent(s, 7, "rgba(255, 211, 106, 0.9)", 1.1);
+    for (const [f, R, spin] of [[0.45, 7, 6], [0.85, 10, -4]]) {   // gears turning along the swing
+      const p = arcPt(s, s.r + 6, s.from + (s.now - s.from) * f);
+      drawGear(p.x, p.y, R, s.clock * spin);
+    }
+    specks(s, 14, 36, 1.5, "#ffd36a", false);
   }
 };
+
+function drawGear(x, y, R, rot) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.fillStyle = "#c98a3a";
+  for (let k = 0; k < 8; k++) { ctx.rotate(Math.PI / 4); ctx.fillRect(-1.6, -R - 2.5, 3.2, 4); }
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#3a2410";
+  ctx.beginPath(); ctx.arc(0, 0, R * 0.38, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// Per slash: the glow colour, the colours of its sparks, and the sounds of the swing and the hit.
+// Legendary weapons also shake the screen and thump when they land.
+const WEAPON_FX = {
+  crimson: { glow: "#ff5a1f", sparks: ["#ff3a1a", "#ff8a1f", "#ffd36a"],
+    swing() { whoosh(0.22, 0.09, 1400, 400); beep(260, 0.2, { type: "sawtooth", vol: 0.04, slideTo: 90 }); },
+    impact() { beep(180, 0.25, { type: "sawtooth", vol: 0.06, slideTo: 60 }); whoosh(0.25, 0.1, 900, 200); } },
+  shadow: { glow: "#7a3cff", sparks: ["#2a1050", "#6a2fd6", "#b48cff"],
+    swing() { beep(140, 0.3, { type: "sine", vol: 0.1, slideTo: 60 }); beep(147, 0.3, { type: "sawtooth", vol: 0.025, slideTo: 62 }); whoosh(0.25, 0.07, 700, 250); },
+    impact() { beep(90, 0.35, { type: "sine", vol: 0.12, slideTo: 40 }); beep(700, 0.15, { type: "triangle", vol: 0.03, slideTo: 200 }); } },
+  aero: { glow: "#bff4ff", sparks: ["#ffffff", "#bff4ff", "#7fd8ff"],
+    swing() { whoosh(0.3, 0.12, 3200, 700); beep(900, 0.2, { type: "sine", vol: 0.03, slideTo: 1600 }); },
+    impact() { whoosh(0.2, 0.1, 2500, 600); beep(1300, 0.1, { type: "triangle", vol: 0.04, slideTo: 700 }); } },
+  frostbite: { glow: "#9fe3ff", sparks: ["#ffffff", "#d2f0ff", "#7fc8ff"],
+    swing() { whoosh(0.2, 0.08, 2600, 1200); beep(2400, 0.25, { type: "triangle", vol: 0.03 }); beep(3200, 0.3, { type: "triangle", vol: 0.025, delay: 0.05 }); },
+    impact() { beep(1800, 0.08, { vol: 0.03 }); beep(2700, 0.18, { type: "triangle", vol: 0.04, delay: 0.03 }); whoosh(0.12, 0.08, 4000, 2000); } },
+  dragon: { glow: "#ff7a00", sparks: ["#ff5a00", "#ffa31a", "#fff0a0"],
+    swing() { whoosh(0.35, 0.12, 1200, 250); beep(110, 0.35, { type: "sawtooth", vol: 0.06, slideTo: 55 }); beep(330, 0.25, { type: "sawtooth", vol: 0.03, slideTo: 120 }); },
+    impact() { beep(80, 0.45, { type: "sawtooth", vol: 0.09, slideTo: 35 }); whoosh(0.4, 0.14, 700, 120); } },
+  laser: { glow: "#27d7ff", sparks: ["#27d7ff", "#7ff4ff", "#ff4fd8"],
+    swing() { beep(300, 0.18, { type: "sawtooth", vol: 0.04, slideTo: 2400 }); beep(2400, 0.12, { vol: 0.02, slideTo: 600, delay: 0.05 }); whoosh(0.15, 0.05, 5000, 3000); },
+    impact() { beep(1600, 0.15, { vol: 0.03, slideTo: 200 }); beep(220, 0.2, { type: "sawtooth", vol: 0.05, slideTo: 70 }); } },
+  voidbringer: { glow: "#a060ff", sparks: ["#6a2fd6", "#ff7ad9", "#ffffff"],
+    swing() { beep(70, 0.45, { type: "sine", vol: 0.12, slideTo: 140 }); beep(1760, 0.3, { type: "triangle", vol: 0.02, slideTo: 2600 }); whoosh(0.3, 0.07, 900, 300); },
+    impact() { beep(60, 0.5, { type: "sine", vol: 0.14, slideTo: 30 }); beep(1200, 0.25, { type: "triangle", vol: 0.03, slideTo: 400 }); } },
+  sun: { glow: "#ffd34d", sparks: ["#fffbe0", "#ffe27a", "#ffb02e"],
+    swing() { [1320, 1660, 1980].forEach((f, i) => beep(f, 0.35, { type: "triangle", vol: 0.03, delay: i * 0.03 })); whoosh(0.25, 0.08, 2000, 800); },
+    impact() { beep(990, 0.3, { type: "triangle", vol: 0.05 }); beep(1480, 0.4, { type: "triangle", vol: 0.04, delay: 0.05 }); beep(1980, 0.5, { type: "sine", vol: 0.03, delay: 0.1 }); } },
+  feather: { glow: "#ff8a2a", sparks: ["#ff5a1f", "#ffa64d", "#ffe0a0"],
+    swing() { whoosh(0.3, 0.1, 1800, 500); beep(520, 0.25, { type: "triangle", vol: 0.03, slideTo: 260 }); beep(780, 0.2, { type: "triangle", vol: 0.025, slideTo: 1200, delay: 0.08 }); },
+    impact() { whoosh(0.3, 0.12, 1100, 300); beep(200, 0.25, { type: "sawtooth", vol: 0.05, slideTo: 80 }); } },
+  thunder: { glow: "#fff04d", sparks: ["#ffffff", "#fff04d", "#7fd8ff"], bolt: true,
+    swing() { whoosh(0.12, 0.1, 4000, 1500); beep(1500, 0.2, { type: "sawtooth", vol: 0.03, slideTo: 100 }); },
+    impact() { whoosh(0.45, 0.2, 3000, 200); beep(60, 0.5, { type: "sawtooth", vol: 0.1, slideTo: 30 }); beep(2000, 0.06, { vol: 0.04 }); } },
+  plague: { glow: "#5dff9a", sparks: ["#3fcf5a", "#9dffb8", "#1f8a35"],
+    swing() { beep(180, 0.3, { vol: 0.03, slideTo: 90 }); [0.05, 0.12, 0.2].forEach((d, i) => beep(600 + i * 200, 0.06, { type: "sine", vol: 0.04, slideTo: 1200 + i * 200, delay: d })); whoosh(0.25, 0.06, 900, 300); },
+    impact() { beep(120, 0.35, { type: "sawtooth", vol: 0.06, slideTo: 50 }); [0, 0.06].forEach((d) => beep(900, 0.05, { type: "sine", vol: 0.05, slideTo: 1600, delay: d })); } },
+  clockwork: { glow: "#e0a040", sparks: ["#c98a3a", "#ffd36a", "#8a5a2a"],
+    swing() { [0, 0.04, 0.08, 0.12].forEach((d) => beep(1800, 0.03, { vol: 0.03, delay: d })); whoosh(0.25, 0.08, 1500, 500); },
+    impact() { beep(1100, 0.12, { vol: 0.04 }); beep(550, 0.25, { type: "triangle", vol: 0.05, delay: 0.02 }); beep(140, 0.25, { type: "sawtooth", vol: 0.05, slideTo: 60 }); } }
+};
+
+function weaponFx() { const skin = equippedSkin(); return skin.slash ? WEAPON_FX[skin.slash] : null; }
+function weaponIsLegendary() { return equippedSkin().rarity === "legendary"; }
+
+// How far through the visible slash of the current basic attack he is (0..1), or -1 if none
+function slashProgress() {
+  const a = player.act;
+  if (!a || !a.basic || !weaponFx()) return -1;
+  const p = (player.actT - (a.hitT[0] - 0.06)) / 0.2;
+  return p > 0 && p < 1 ? p : -1;
+}
+function slashAngle(p) { return -2.5 + 3.6 * Math.min(1, p * 1.3 + 0.2); }
+
+// A rare or legendary weapon landing a basic hit: sparks in its colours, a flash ring, its sound
+let impacts = [];
+function weaponImpact(o) {
+  const fx = weaponFx(), legend = weaponIsLegendary();
+  const x = o.x + o.w / 2, y = o.y + 36;
+  for (const c of fx.sparks) burst(x, y, legend ? 9 : 6, c, legend ? 320 : 260);
+  impacts.push({ x, y, t: 0, color: fx.glow, bolt: fx.bolt, big: legend });
+  fx.impact();
+  if (legend) {
+    beep(70, 0.3, { type: "sine", vol: 0.12, slideTo: 35 });
+    shakeTime = Math.max(shakeTime, 0.16);
+  }
+}
+
+function drawImpacts() {
+  for (const m of impacts) {
+    const k = m.t / 0.3, R = (m.big ? 34 : 24) * (0.3 + k);
+    ctx.save();
+    ctx.globalAlpha = 1 - k;
+    ctx.shadowColor = m.color;
+    ctx.shadowBlur = 12;
+    ctx.strokeStyle = m.color;
+    ctx.lineWidth = (m.big ? 5 : 3.5) * (1 - k) + 1;
+    ctx.beginPath(); ctx.arc(m.x, m.y, R, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = "#ffffff";   // a hard white pixel cross at the centre
+    const c = (m.big ? 9 : 6) * (1 - k);
+    ctx.fillRect(m.x - c, m.y - 1.5, c * 2, 3);
+    ctx.fillRect(m.x - 1.5, m.y - c, 3, c * 2);
+    if (m.bolt && k < 0.6) {   // thunder: a bolt strikes down from the sky onto the target
+      let bx = m.x, by = 0;
+      ctx.strokeStyle = "#fff9b0"; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(bx, by);
+      while (by < m.y) { by += 22; bx = m.x + (rnd(by + Math.floor(m.t * 30)) - 0.5) * 26; ctx.lineTo(bx, Math.min(by, m.y)); }
+      ctx.stroke();
+      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
 
 // --- Sword drawing ---
 // Blade outlines. Each returns how far the top and bottom edges stick out (1 = half the
@@ -2687,10 +2917,40 @@ function drawPixelScythe(canvas, g) {
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) g.drawImage(scytheRim, x + dx * k, y + dy * k, w, h);
   g.drawImage(SCYTHE_IMG, x, y, w, h);
 }
+// The pixel-art weapons, loaded once; the open shop or inventory redraws as each one arrives
+const WEAPON_IMGS = {};
+for (const skin of Object.values(SWORD_SKINS)) {
+  if (!skin.img || WEAPON_IMGS[skin.img]) continue;
+  const img = new Image();
+  img.src = `pictures/weapons/${skin.img}.png`;
+  img.onload = () => {
+    if (menus.shop.classList.contains("open")) refreshShop();
+    if (menus.inventory.classList.contains("open")) refreshInventory();
+  };
+  WEAPON_IMGS[skin.img] = img;
+}
+
+// A pixel weapon fitted to the card; rare and legendary ones float and glow in their rarity colour
+function drawWeaponImg(canvas, g, skin) {
+  const img = WEAPON_IMGS[skin.img];
+  if (!img.complete || !img.naturalWidth) return;
+  const k = Math.min(canvas.width / img.width, canvas.height / img.height) * 0.94;
+  const w = img.width * k, h = img.height * k;
+  const bob = skin.slash ? Math.round(Math.sin(performance.now() / 1000 * 3) * 3) : 0;
+  g.imageSmoothingEnabled = false;
+  if (skin.slash) {
+    g.shadowColor = RARITIES[skin.rarity].color;
+    g.shadowBlur = 10 + 6 * Math.sin(performance.now() / 1000 * 4);
+  }
+  g.drawImage(img, Math.round((canvas.width - w) / 2), Math.round((canvas.height - h) / 2) + bob, w, h);
+  g.shadowBlur = 0;
+}
+
 function drawSwordPreview(canvas, skin) {
   const g = canvas.getContext("2d");
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, canvas.width, canvas.height);
+  if (skin.img) { drawWeaponImg(canvas, g, skin); return; }
   if (!skin.blade && SCYTHE_IMG.complete && SCYTHE_IMG.naturalWidth) { drawPixelScythe(canvas, g); return; }
   const scale = canvas.width / 44;   // 44 units across, ~17 down
   g.setTransform(scale, 0, 0, scale, 0, 0);
@@ -2755,70 +3015,6 @@ function drawSwordPreview(canvas, skin) {
     g.globalAlpha = 1;
   }
 }
-const HERO_HEAD = 9.5;   // the hero's head is bigger than the others', like the art
-function drawHero(pts, down = false) {
-  const t = performance.now() / 1000;
-  const h = pts.head;
-
-  // Rim light (the aura): the same figure, wider and faint, drawn underneath
-  if (look.equipped.aura !== "none") {
-    const aura = auraColors();
-    drawFigure(pts, aura.front, aura.back, 8.2, HERO_HEAD + 2.2);
-  }
-  drawFigure(pts, colors.hero, colors.heroBack, 4.6, HERO_HEAD);
-
-  // Shoes and hands
-  ctx.lineCap = "round";
-  // No shoes: the legs just end in a rounded tip
-  for (const [hand, color] of [[pts.handB, colors.heroBack], [pts.handF, colors.hero]]) {
-    ctx.fillStyle = color;
-    ctx.beginPath(); ctx.arc(hand.x, hand.y, 2.7, 0, Math.PI * 2); ctx.fill();
-  }
-
-  // Scarf: two tails that flutter harder (and longer) the faster the game goes
-  const knot = { x: pts.neck.x - 1, y: pts.neck.y + 1 };
-  const len = 18 + (speed || 400) * 0.014;
-  const scarf = scarfColors();
-  for (const [l, dy, color, ph] of look.equipped.scarf === "none" ? [] : [[len * 1.3, 3, scarf.b, 1.3], [len, 0, scarf.a, 0]]) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(knot.x, knot.y);
-    if (down) {
-      ctx.quadraticCurveTo(knot.x - 4, knot.y + 5, knot.x - 5 + dy, knot.y + 14);
-    } else {
-      const w = Math.sin(t * 13 + ph) * 3;
-      ctx.quadraticCurveTo(knot.x - l * 0.55, knot.y + dy + w, knot.x - l, knot.y + dy + 2 + Math.sin(t * 13 + ph + 1.5) * 3.5);
-    }
-    ctx.stroke();
-  }
-  if (look.equipped.scarf !== "none") {
-    ctx.fillStyle = scarf.a;
-    ctx.beginPath(); ctx.arc(knot.x, knot.y, 3, 0, Math.PI * 2); ctx.fill();
-  }
-
-  // Face: narrowed glowing eyes under a determined brow (he faces right)
-  ctx.strokeStyle = colors.sky;
-  ctx.fillStyle = colors.sky;
-  if (down) {
-    ctx.lineWidth = 1.2;
-    for (const ex of [0.6, 4.2]) {
-      line(h.x + ex - 1.5, h.y - 2.4, h.x + ex + 1.5, h.y + 0.6);
-      line(h.x + ex + 1.5, h.y - 2.4, h.x + ex - 1.5, h.y + 0.6);
-    }
-  } else {
-    ctx.shadowColor = "#9fd4ff";
-    ctx.shadowBlur = 7;
-    ctx.fillStyle = "#ffffff";   // big glowing white eyes, slanted into an angry brow
-    for (const [ex, tilt] of [[0.9, -0.5], [5.2, 0.5]]) {
-      ctx.beginPath(); ctx.ellipse(h.x + ex, h.y - 0.8, 2.1, 2.9, tilt, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-  }
-
-  drawHat(look.equipped.hat, h, pts.neck);
-}
-
 // A swirling purple gate: opens, holds while the enemy steps out, then closes
 function drawPortal(p) {
   const open = Math.min(1, p.t / 0.4), shut = p.t > 1.0 ? Math.max(0, 1 - (p.t - 1.0) / 0.4) : 1;
@@ -2848,7 +3044,7 @@ function drawPortal(p) {
 function heroSprite() {
   const now = performance.now() / 1000;
   const rate = (st) => now * (st.fps || 10);
-  if (state === "dying") { const st = HS.dying; const f = stateFrame(st, dyingT * st.fps); f.rot = Math.min(1.5, dyingT * 3.2); return f; }
+  if (state === "dying") { const st = HS.dying; return stateFrame(st, dyingT * st.fps); }
   if (player.stun > 0) return stateFrame(HS.hurt, (0.3 - player.stun) / 0.3 * HS.hurt.frames.length);
   if (player.act) return actFrame(player.act, player.actT);
   if (player.dash > 0) return stateFrame(HS.dash, (1 - player.dash / DASH_TIME) * HS.dash.frames.length);
@@ -2861,31 +3057,98 @@ function heroSprite() {
   return stateFrame(HS.idle, rate(HS.idle) % HS.idle.frames.length);
 }
 
-// One frame of a sheet, feet at (cx, feet); face = 1 (right) or -1 (left)
-function drawSprite(sheet, frame, cx, feet, face, rot = 0) {
-  const img = SHEETS[sheet];
-  if (!img.complete || !img.naturalWidth) return;
+// --- Holding a shop weapon (see tools/make_hold.py) ---
+// With a shop weapon equipped he is drawn from copies of his sheets with the scythe taken out,
+// his black slash trails are tinted in the weapon's colour, and the weapon is drawn in his hand.
+const HOLD = window.STICKGO_HOLD;
+const HOLD_SHEETS = {}, TRAIL_SHEETS = {}, HELD_IMGS = {};
+const loadImg = (src) => { const img = new Image(); img.src = src; return img; };
+for (const name of Object.keys(SHEET_FRAMES)) {
+  HOLD_SHEETS[name] = loadImg(`pictures/hold/hero_${name}.png`);
+  TRAIL_SHEETS[name] = loadImg(`pictures/hold/trail_${name}.png`);
+}
+for (const id of Object.keys(HOLD.weapons)) HELD_IMGS[id] = loadImg(`pictures/hold/w_${id}.png`);
+const ready = (img) => img.complete && img.naturalWidth;
+
+// The equipped shop weapon, or null for the starter scythe that is already in his sprites
+function heldWeapon() {
+  const skin = equippedSkin();
+  return skin.img && HOLD.weapons[skin.img] && ready(HELD_IMGS[skin.img]) ? skin : null;
+}
+function trailColor(skin) { return skin.slash ? WEAPON_FX[skin.slash].glow : HOLD.weapons[skin.img].color; }
+
+// A trail sheet in one colour, made once per sheet and colour
+const trailCache = {};
+function tintedTrail(sheet, color) {
+  const key = sheet + color;
+  if (trailCache[key]) return trailCache[key];
+  const img = TRAIL_SHEETS[sheet];
+  if (!ready(img)) return null;
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const g = c.getContext("2d");
+  g.drawImage(img, 0, 0);
+  g.globalCompositeOperation = "source-in";
+  g.fillStyle = color;
+  g.fillRect(0, 0, c.width, c.height);
+  return (trailCache[key] = c);
+}
+
+// The weapon in his hand, in sprite pixels: its grip on his grip, turned the way the scythe pointed
+function drawHeldWeapon(skin, sheet, frame) {
+  const grip = (HOLD.hero[sheet] || [])[frame];
+  if (!grip) return;
+  const w = HOLD.weapons[skin.img];
+  ctx.save();
+  ctx.translate(grip[0], grip[1]);
+  ctx.rotate(grip[2] - w.ang);
+  ctx.drawImage(HELD_IMGS[skin.img], -w.gx, -w.gy);
+  ctx.restore();
+}
+
+// One frame of a sheet, feet at (cx, feet); face = 1 (right) or -1 (left). The yellow body is
+// recoloured with the equipped colour, the accessories are drawn on his head and the equipped
+// shop weapon in his hand.
+function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, color = look.equipped.color, accs = look.equipped.acc, weapon = heldWeapon()) {
+  const held = weapon && ready(HOLD_SHEETS[sheet]) ? weapon : null;
+  const img = held ? HOLD_SHEETS[sheet] : SHEETS[sheet];
+  if (!ready(img)) return;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.translate(Math.round(cx), Math.round(feet + 2 * SC));
+  ctx.translate(Math.round(cx), Math.round(feet + 2 * sc));
   if (rot) ctx.rotate(rot * face);
-  ctx.scale(face * SC, SC);
-  ctx.drawImage(img, frame * FRAME_W, 0, FRAME_W, FRAME_H, -FRAME_W / 2, -FRAME_H, FRAME_W, FRAME_H);
+  ctx.scale(face * sc, sc);
+  ctx.translate(-FRAME_W / 2, -FRAME_H);   // from here on, units are sprite pixels
+  const f = colorFilter(color);
+  if (f) ctx.filter = f;
+  ctx.drawImage(img, frame * FRAME_W, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
+  ctx.filter = "none";
+  if (held) {
+    const trail = tintedTrail(sheet, trailColor(held));
+    if (trail) ctx.drawImage(trail, frame * FRAME_W, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
+  }
+  if (accs.length) drawAccessories(accs, sheet, frame);
+  if (held) drawHeldWeapon(held, sheet, frame);
   ctx.restore();
 }
 
 // The slash effect of an equipped rare or legendary sword, drawn around his basic attacks
 function drawSkinSlash(cx, feet) {
-  const fx = SLASH_FX[skinState.equipped], a = player.act;
-  if (!fx || !a || !a.basic) return;
-  const p = (player.actT - (a.hitT[0] - 0.06)) / 0.2;
-  if (p <= 0 || p >= 1) return;
-  const cy = feet - 36;
+  const p = slashProgress();
+  if (p < 0) return;
+  const fx = SLASH_FX[equippedSkin().slash], glow = weaponFx().glow, legend = weaponIsLegendary();
+  const cy = feet - 36, clock = performance.now() / 1000, seed = Math.floor(performance.now() / 60);
+  const slash = (now, r) => fx({ sh: { x: cx, y: cy }, r, from: -2.5, now, pts: { neck: { x: cx, y: cy - 14 } }, seed, clock });
   ctx.save();
   if (player.facing < 0) { ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.translate(-cx, 0); }
+  ctx.shadowColor = glow;
+  ctx.shadowBlur = legend ? 18 : 11;
+  if (legend) {   // a wider, fainter echo trailing behind the blade
+    ctx.globalAlpha = 0.35 * (1 - p);
+    slash(slashAngle(p) - 0.35, 74);
+  }
   ctx.globalAlpha = 1 - 0.6 * p;
-  fx({ sh: { x: cx, y: cy }, r: 62, from: -2.5, now: -2.5 + 3.6 * Math.min(1, p * 1.3 + 0.2),
-       pts: { neck: { x: cx, y: cy - 14 } }, seed: Math.floor(performance.now() / 60), clock: performance.now() / 1000 });
+  slash(slashAngle(p), 62);
   ctx.restore();
 }
 
@@ -2901,15 +3164,13 @@ function drawStickman() {
   const cx = player.x + player.w / 2, feet = player.y + player.h;
   heroFlash = null;
   if (fr.flash) {
-    // Flash frames (the ultimate's) fill the whole screen; Comfort Mode skips them
-    if (!settings.comfort) { heroFlash = fr; return; }
-    fr = stateFrame(HS.idle, 0);
+    // Flash frames (the ultimate's) fill the whole screen
+    heroFlash = fr;
+    return;
   }
   drawSkinSlash(cx, feet);
   ctx.save();
   if (player.hurt > 0 && state === "running") ctx.globalAlpha = 0.65;
-  ctx.shadowColor = auraColors().front;   // the aura from CUSTOMIZE glows around him
-  ctx.shadowBlur = 8;
   drawSprite(fr.sheet, fr.frame, cx, feet, player.facing, fr.rot || 0);
   ctx.restore();
 }
@@ -3134,7 +3395,7 @@ function draw() {
 
   ctx.save();
   if (shakeTime > 0) {
-    const m = shakeTime * 16 * (settings.comfort ? 0 : 0.6);
+    const m = shakeTime * 16 * 0.6;
     ctx.translate((Math.random() - 0.5) * m, (Math.random() - 0.5) * m);
   }
 
@@ -3144,10 +3405,8 @@ function draw() {
   ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
   ctx.fillStyle = colors.inkBack;
   ctx.fillRect(0, GROUND_Y, W, PX);
-  // Comfort Mode draws fewer, fainter ground specks: they're a busy pattern at high speed
-  if (settings.comfort) ctx.fillStyle = colors.inkBack;
-  const specks = settings.comfort ? 14 : groundBits.length;
-  for (let i = 0; i < specks; i++) ctx.fillRect(snap(groundBits[i].x), snap(groundBits[i].y), Math.max(PX, snap(groundBits[i].w)), PX);
+  ctx.fillStyle = colors.ink;
+  for (let i = 0; i < groundBits.length; i++) ctx.fillRect(snap(groundBits[i].x), snap(groundBits[i].y), Math.max(PX, snap(groundBits[i].w)), PX);
 
   for (const c of corpses) drawCorpse(c);
   portals.forEach(drawPortal);
@@ -3162,6 +3421,7 @@ function draw() {
   }
   ctx.globalAlpha = 1;
   drawStickman();
+  drawImpacts();
   ctx.fillStyle = colors.ink;
   ctx.font = "bold 16px 'Courier New', monospace";
   ctx.textAlign = "center";
@@ -3199,33 +3459,24 @@ function draw() {
     ctx.globalAlpha = 1;
   }
 
-  // His health, top left (next to the pause button)
-  ctx.fillStyle = colors.inkBack;
-  ctx.fillRect(84, 22, 190, 14);
-  ctx.fillStyle = player.hp > 30 ? "#3fbf5a" : "#e02020";
-  ctx.fillRect(84, 22, 190 * player.hp / PLAYER_MAX_HP, 14);
-  ctx.strokeStyle = colors.ink;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(84, 22, 190, 14);
+  // Top left, next to the pause button: HEALTH, then MANA, then KILLS
+  const bar = (y, frac, color) => {
+    ctx.fillStyle = colors.inkBack;
+    ctx.fillRect(84, y, 190, 14);
+    ctx.fillStyle = color;
+    ctx.fillRect(84, y, 190 * Math.max(0, Math.min(1, frac)), 14);
+    ctx.strokeStyle = colors.ink;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(84, y, 190, 14);
+  };
+  bar(22, player.hp / PLAYER_MAX_HP, player.hp > 30 ? "#3fbf5a" : "#e02020");
+  bar(42, player.mana / MANA_MAX, "#3d8bff");
+  // Ticks show what each skill costs, so he can see how much he can spend
   ctx.fillStyle = colors.ink;
+  for (const c of SKILL_MANA) if (c < MANA_MAX) ctx.fillRect(84 + 190 * c / MANA_MAX - 1, 42, 2, 14);
   ctx.font = "bold 12px 'Courier New', monospace";
   ctx.textAlign = "left";
-  ctx.fillText(`KILLS ${kills}`, 84, 52);
-  // Dash and skills 1-3: each bar fills while it recharges and turns bright when ready
-  [["DASH", player.dashCooldown, DASH_COOLDOWN, "#4aa8ff"], ["1", player.cd[0], SKILLS[0].cd, "#ffd34d"],
-   ["2", player.cd[1], SKILLS[1].cd, "#ffd34d"], ["3", player.cd[2], SKILLS[2].cd, "#ff7a2a"]].forEach(([label, cd, max, color], i) => {
-    const x = 84 + i * 50;
-    ctx.fillStyle = colors.ink;
-    ctx.font = "bold 10px 'Courier New', monospace";
-    ctx.fillText(label, x, 66);
-    ctx.fillStyle = colors.inkBack;
-    ctx.fillRect(x, 70, 44, 7);
-    ctx.fillStyle = cd > 0 ? "#8892a0" : color;
-    ctx.fillRect(x, 70, 44 * (1 - cd / max), 7);
-    ctx.strokeStyle = colors.ink;
-    ctx.lineWidth = 1.2;
-    ctx.strokeRect(x, 70, 44, 7);
-  });
+  ctx.fillText(`KILLS ${kills}`, 84, 72);
   const boss = foes.find((o) => o.kind === "boss");
   if (boss) {
     ctx.fillStyle = colors.inkBack;

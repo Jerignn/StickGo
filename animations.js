@@ -4,7 +4,7 @@
 //  hero.actions - attacks and skills: parts play one after another; hits land when the part reaches
 //                 frame number `at` (a position in that part's frame list); front/back = reach in
 //                 game units, kb = shove, cd = cooldown (s), lunge = step forward, flash = frames
-//                 that fill the screen (skipped in Comfort Mode)
+//                 that fill the screen
 //  foes         - stats and animations for every enemy kind; row/frames pick cells in pictures/foe_<kind>.png
 window.STICKGO_ANIMS = {
   "hero": {
@@ -42,9 +42,9 @@ window.STICKGO_ANIMS = {
         "frames": [0, 1, 2]
       },
       "dying": {
-        "sheet": "hit3",
-        "frames": [0, 1, 2],
-        "fps": 6
+        "sheet": "death",
+        "frames": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "fps": 9
       }
     },
     "actions": {
