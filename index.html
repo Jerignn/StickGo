@@ -1591,6 +1591,7 @@ const PLAYER_SPEED = 230;      // px/s
 const PLAYER_MAX_HP = 100;
 // Mana: skills 1, 2 and 3 cost mana instead of having cooldowns. It does not refill by itself: enemies sometimes drop
 // health and mana potions (POTION_CHANCE), which restore a little when he walks over them.
+const WAVE_CLEAR_HP = 30, WAVE_CLEAR_MANA = 50;   // restored when a wave is cleared
 const POTION_CHANCE = 0.16, POTION_HEAL = 15, POTION_MANA = 20, POTION_LIFE = 9;
 const MANA_MAX = 100;
 const SKILL_MANA = [25, 40, 100];
@@ -2009,8 +2010,9 @@ function update(dt) {
     if (waveClearTimer < 0) {
       waveClearTimer = 2.5;
       score += 50;
-      player.hp = Math.min(PLAYER_MAX_HP, player.hp + 20);
-      bossBanner = { title: `WAVE ${wave} CLEARED`, sub: "+50 SCORE   +20 HP", t: 2.2 };
+      player.hp = Math.min(PLAYER_MAX_HP, player.hp + WAVE_CLEAR_HP);
+      player.mana = Math.min(MANA_MAX, player.mana + WAVE_CLEAR_MANA);
+      bossBanner = { title: `WAVE ${wave} CLEARED`, sub: `+50 SCORE   +${WAVE_CLEAR_HP} HP   +${WAVE_CLEAR_MANA} MANA`, t: 2.2 };
       sfx.point();
     } else {
       waveClearTimer -= dt;
