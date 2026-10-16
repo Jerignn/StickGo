@@ -322,7 +322,7 @@
     justify-content: center;
     gap: 10px;
     width: min(560px, 62vw);
-    max-height: calc(100vh - 160px);
+    max-height: calc(100vh - 210px);
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 4px;
@@ -334,6 +334,10 @@
   #lookItems .card button { min-width: 0; width: 100%; padding: 5px 4px; font-size: 13px; }
   #lookItems .card button.cant { opacity: 0.55; }
   #lookMsg { min-height: 1.2em; color: #ffd34d; font-size: 13px; }
+  #lookTabs { flex-wrap: wrap; justify-content: center; gap: 5px; width: min(560px, 62vw); }
+  #lookTabs .tab { padding: 4px 8px; font-size: 11px; }
+  #lookItems .card button.locked { font-size: 9px; letter-spacing: 0; padding: 6px 2px; }
+  #lookItems .card.outfit button + button { margin-top: 3px; }
   #shopSections { display: flex; flex-direction: column; align-items: center; gap: 8px; }
   /* Shop rows and the inventory wrap into rows and scroll when there are more weapons than fit */
   #shopSections .shop-row, #invItems {
@@ -455,6 +459,7 @@
     </div>
   </div>
   <div class="shop-foot">
+    <button data-action="lookRandom">RANDOM</button>
     <button data-action="lookBack">BACK</button>
   </div>
 </div>
@@ -728,6 +733,7 @@ function reset() {
   runGold = 0;
   popups = [];
   sparks = [];
+  fxParts = [];
   impacts = [];
   bossBanner = null;
   wave = 0;
@@ -850,6 +856,7 @@ const menuActions = {
   invBack: () => showMenu("main"),
   look: () => showMenu("look"),
   lookBack: () => showMenu("main"),
+  lookRandom: () => randomLook(),
   resume: resumeGame,
   main: goToMainMenu,
   settings: () => openSettings(state === "paused" ? "pause" : "main"),
@@ -1020,61 +1027,222 @@ function equipSkin(id) {
 
 function invMessage(text) { document.getElementById("invMsg").textContent = text; }
 
-// --- Customize: the stickman's colour and accessories ---
-// He is always the yellow pixel stickman by default. Everything else is bought with gold.
-// Each group keeps its own owned list; the colour has one equipped item, accessories can be stacked.
+// --- Customize: how the stickman looks ---
+// He is always the yellow pixel stickman by default. Everything else is bought with gold, or unlocked by
+// playing (items with `unlock`, see STATS). Every group has one equipped item, except the accessories,
+// which stack. Items get a rarity from their price (or a fixed one), shown in the same colours as the swords.
 const COLORS = {
   yellow: { name: "YELLOW", price: 0, filter: "" },
   orange: { name: "ORANGE", price: 40, filter: "hue-rotate(-27deg)" },
   red:    { name: "RED", price: 40, filter: "hue-rotate(-57deg) saturate(1.2)" },
+  lime:   { name: "LIME", price: 40, filter: "hue-rotate(30deg) saturate(1.2)" },
   green:  { name: "GREEN", price: 40, filter: "hue-rotate(63deg)" },
+  cyan:   { name: "CYAN", price: 60, filter: "hue-rotate(122deg)" },
   blue:   { name: "BLUE", price: 60, filter: "hue-rotate(158deg)" },
   purple: { name: "PURPLE", price: 60, filter: "hue-rotate(218deg)" },
   pink:   { name: "PINK", price: 60, filter: "hue-rotate(263deg) brightness(1.1)" },
   white:  { name: "WHITE", price: 80, filter: "saturate(0) brightness(1.15)" },
   shadow: { name: "SHADOW", price: 80, filter: "saturate(0) brightness(0.45)" },
-  rainbow: { name: "RAINBOW", price: 400, rainbow: true }
+  rainbow: { name: "RAINBOW", price: 400, anim: (t) => `hue-rotate(${Math.round((t * 50) % 360)}deg)` },
+  lava:   { name: "LAVA", price: 450, anim: (t) => `hue-rotate(${Math.round(-42 + Math.sin(t * 3) * 15)}deg) saturate(1.4) brightness(${(1 + Math.sin(t * 3) * 0.12).toFixed(2)})` },
+  ghost:  { name: "GHOST", price: 450, anim: (t) => `saturate(0.15) brightness(1.5) opacity(${(0.55 + Math.sin(t * 9) * 0.12 - (Math.sin(t * 2.3) > 0.85 ? 0.3 : 0)).toFixed(2)})` },
+  gold:   { name: "GOLD", price: 1500, filter: "hue-rotate(-14deg) saturate(1.6) brightness(0.88) contrast(1.15)" }
+};
+// A coloured outline with a soft glow around his whole body
+const GLOWS = {
+  none:    { name: "NO GLOW", price: 0 },
+  white:   { name: "WHITE GLOW", price: 80, color: "#ffffff" },
+  fire:    { name: "FIRE GLOW", price: 150, color: "#ff6a1a" },
+  ice:     { name: "ICE GLOW", price: 150, color: "#6fe3ff" },
+  toxic:   { name: "TOXIC GLOW", price: 200, color: "#7dff4a" },
+  void:    { name: "VOID GLOW", price: 300, color: "#b266ff" },
+  golden:  { name: "GOLDEN PULSE", price: 600, color: "#ffd34d", pulse: true },
+  rainbow: { name: "RAINBOW GLOW", price: 900, color: "#ff3030", anim: true }
+};
+const HATS = {
+  none:    { name: "NO HAT", price: 0 },
+  beanie:  { name: "BEANIE", price: 60 },
+  cowboy:  { name: "COWBOY HAT", price: 100 },
+  topknot: { name: "SAMURAI TOPKNOT", price: 120 },
+  party:   { name: "PARTY HAT", price: 150 },
+  tophat:  { name: "TOP HAT", price: 200 },
+  wizard:  { name: "WIZARD HAT", price: 250 },
+  halo:    { name: "HALO", price: 400 },
+  crown:   { name: "CROWN", price: 1000 },
+  horns:   { name: "DEMON HORNS", rarity: "legendary", unlock: { stat: "bosses", n: 3, text: "BEAT 3 BOSSES" } }
 };
 const ACCESSORIES = {
   shades:   { name: "SUNGLASSES", price: 60 },
+  mustache: { name: "MUSTACHE", price: 60 },
   headband: { name: "NINJA HEADBAND", price: 80 },
+  angry:    { name: "ANGRY EYES", price: 80 },
   scarf:    { name: "RED SCARF", price: 100 },
+  mask:     { name: "NINJA MASK", price: 100 },
   bowtie:   { name: "BOW TIE", price: 120 },
+  scar:     { name: "BATTLE SCAR", price: 120 },
   eyepatch: { name: "EYE PATCH", price: 150 },
-  monocle:  { name: "GOLD MONOCLE", price: 200 }
+  monocle:  { name: "GOLD MONOCLE", price: 200 },
+  visor:    { name: "CYBER VISOR", price: 300 },
+  skull:    { name: "SKULL MASK", rarity: "legendary", unlock: { stat: "bestWave", n: 20, text: "REACH WAVE 20" } }
 };
+// Worn on his back, drawn behind him
+const BACKS = {
+  none:     { name: "NOTHING", price: 0 },
+  backpack: { name: "BACKPACK", price: 80 },
+  sheath:   { name: "KATANA SHEATH", price: 150 },
+  cape:     { name: "RED CAPE", price: 250 },
+  jetpack:  { name: "JETPACK", price: 400 },
+  wings:    { name: "ANGEL WINGS", price: 900 },
+  warlord:  { name: "WARLORD CAPE", rarity: "legendary", unlock: { stat: "bosses", n: 10, text: "BEAT 10 BOSSES" } }
+};
+
+// Unlocking items by playing: lifetime stats, saved on this device
+const STATS = { bestWave: 0, kills: 0, bosses: 0 };
+try { Object.assign(STATS, JSON.parse(localStorage.getItem("stickgo-stats") || "{}")); } catch (e) { /* defaults */ }
+function saveStats() { localStorage.setItem("stickgo-stats", JSON.stringify(STATS)); }
+function bumpStat(key, n = 1) { STATS[key] += n; saveStats(); checkUnlocks(); }
+function reachWave(n) { if (n > STATS.bestWave) { STATS.bestWave = n; saveStats(); checkUnlocks(); } }
+
+const pick = (r, list) => list[Math.floor(r() * list.length)];
+const hueNow = (speed = 0.3) => `hsl(${Math.floor((performance.now() * speed) % 360)}, 100%, 62%)`;
+const hueRnd = (r) => `hsl(${Math.floor(r() * 360)}, 100%, 62%)`;
+
+// --- Cosmetic particles: trails, auras, kill and coin effects ---
+// Each particle moves on a fixed curve (start + velocity·t + gravity·t²/2, plus an optional sideways
+// wobble), so the same code draws it in the game, in the preview and in the menu icons.
+// Units are game units (he is about 60 tall); emitters get add(particle), a position and a random function.
+const TRAILS = {   // left behind while he runs or dashes
+  none:    { name: "NO TRAIL", price: 0 },
+  sparks:  { name: "SPARKS", price: 120, rate: 40, emit: (add, x, y, dir, r) => add({ x: x + (r() - 0.5) * 10, y: y - r() * 8, vx: -dir * (30 + r() * 60), vy: -80 - r() * 120, g: 700, life: 0.5, s: 3 + r() * 2, c: pick(r, ["#ffe14d", "#ffb02e", "#fff6c0"]) }) },
+  petals:  { name: "SAKURA PETALS", price: 150, rate: 16, emit: (add, x, y, dir, r) => add({ x: x + (r() - 0.5) * 10, y: y - 10 - r() * 30, vx: -dir * (20 + r() * 30), vy: -20 - r() * 30, g: 70, wob: 6, life: 1.4, s: 4, shape: "petal", c: pick(r, ["#ffb7d5", "#ff8fbf", "#ffe1ee"]) }) },
+  flames:  { name: "FLAME STEPS", price: 250, rate: 45, emit: (add, x, y, dir, r) => add({ x: x + (r() - 0.5) * 12, y: y - r() * 4, vx: -dir * 20, vy: -50 - r() * 60, g: -30, life: 0.45, s: 5 + r() * 3, grow: -8, c: pick(r, ["#fff0a0", "#ffb02e", "#ff5a1a"]) }) },
+  hearts:  { name: "LOVE HEARTS", price: 300, rate: 9, emit: (add, x, y, dir, r) => add({ x: x + (r() - 0.5) * 10, y: y - 10 - r() * 30, vx: -dir * 15, vy: -40, g: -15, wob: 4, life: 1.1, s: 8, shape: "heart", c: pick(r, ["#ff4f7a", "#ff8fb0"]) }) },
+  frost:   { name: "FROST SHARDS", price: 400, rate: 25, emit: (add, x, y, dir, r) => add({ x: x + (r() - 0.5) * 12, y: y - r() * 30, vx: -dir * (20 + r() * 30), vy: -30 - r() * 50, g: 120, life: 0.7, s: 4, shape: "star", c: pick(r, ["#bff4ff", "#6fe3ff", "#ffffff"]) }) },
+  rainbow: { name: "RAINBOW STREAK", price: 800, rate: 60, emit: (add, x, y, dir, r) => add({ x, y: y - 14 - r() * 22, vx: -dir * 10, life: 0.5, s: 5, c: hueNow() }) },
+  comet:   { name: "COMET TAIL", rarity: "legendary", unlock: { stat: "kills", n: 1500, text: "1,500 KILLS" }, rate: 55,
+             emit: (add, x, y, dir, r) => add({ x, y: y - 20 - r() * 20, vx: -dir * (80 + r() * 80), vy: (r() - 0.5) * 30, life: 0.4, s: 4 + r() * 2, shape: "star", c: pick(r, ["#ffffff", "#9fd0ff", "#6fa8ff"]) }) }
+};
+const AURAS = {   // around him all the time (cx, feet = where he stands)
+  none:     { name: "NO AURA", price: 0 },
+  sparkle:  { name: "SPARKLES", price: 150, rate: 10, emit: (add, cx, f, r) => add({ x: cx + (r() - 0.5) * 50, y: f - r() * 70, vy: -10, life: 0.6, s: 3 + r() * 2, shape: "star", c: pick(r, ["#ffffff", "#fff6a0"]) }) },
+  embers:   { name: "EMBERS", price: 250, rate: 14, emit: (add, cx, f, r) => add({ x: cx + (r() - 0.5) * 30, y: f - r() * 50, vy: -40 - r() * 40, wob: 3, life: 1.2, s: 3, c: pick(r, ["#ffb02e", "#ff6a1a", "#ffe14d"]) }) },
+  snow:     { name: "SNOWFALL", price: 300, rate: 8, emit: (add, cx, f, r) => add({ x: cx + (r() - 0.5) * 50, y: f - 80 - r() * 10, vy: 25 + r() * 15, wob: 5, life: 1.8, s: 3, shape: "star", c: "#ffffff" }) },
+  wisps:    { name: "DARK WISPS", price: 400, rate: 16, emit: (add, cx, f, r) => add({ x: cx + (r() - 0.5) * 26, y: f - r() * 30, vy: -30 - r() * 20, life: 1, s: 4, grow: 5, a: 0.7, c: pick(r, ["#3a1a5a", "#5b2a9e"]) }) },
+  orbs:     { name: "ORBITING ORBS", price: 600, orbs: "#6fe3ff" },
+  champion: { name: "CHAMPION AURA", rarity: "legendary", unlock: { stat: "bestWave", n: 30, text: "REACH WAVE 30" }, orbs: "#ffd34d", rate: 14,
+              emit: (add, cx, f, r) => add({ x: cx + (r() - 0.5) * 40, y: f - r() * 40, vy: -50 - r() * 30, life: 1, s: 3 + r() * 2, shape: "star", c: pick(r, ["#ffd34d", "#fff0a0"]) }) }
+};
+const KILL_FX = {   // bursts out of an enemy when he dies (on top of the normal sparks)
+  none:      { name: "NO EFFECT", price: 0 },
+  confetti:  { name: "CONFETTI", price: 200, burst: (add, x, y, r) => { for (let i = 0; i < 28; i++) add({ x, y, vx: (r() - 0.5) * 360, vy: -150 - r() * 250, g: 520, wob: 6, life: 1.3, s: 4, c: pick(r, ["#ff4f7a", "#ffe14d", "#4ad6ff", "#7dff4a", "#b266ff"]) }); } },
+  hearts:    { name: "HEARTBREAK", price: 250, burst: (add, x, y, r) => { for (let i = 0; i < 9; i++) add({ x, y, vx: (r() - 0.5) * 120, vy: -80 - r() * 80, g: -20, wob: 5, life: 1.2, s: 8, shape: "heart", c: pick(r, ["#ff4f7a", "#ff8fb0"]) }); } },
+  explosion: { name: "PIXEL EXPLOSION", price: 400, burst: (add, x, y, r) => {
+    add({ x, y, life: 0.35, s: 6, grow: 160, shape: "ring", c: "#ffb02e" });
+    for (let i = 0; i < 22; i++) { const a = r() * Math.PI * 2, v = 120 + r() * 220; add({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60, g: 250, life: 0.55, s: 5 + r() * 3, grow: -6, c: pick(r, ["#fff0a0", "#ffb02e", "#ff5a1a", "#ff2a2a"]) }); }
+  } },
+  glitch:    { name: "GLITCH", price: 600, burst: (add, x, y, r) => { for (let i = 0; i < 18; i++) add({ x: x + (r() - 0.5) * 20, y: y + (r() - 0.5) * 50, vx: (r() - 0.5) * 400, vy: (r() - 0.5) * 40, life: 0.35, s: 3 + r() * 6, c: pick(r, ["#00f0ff", "#ff00e0", "#ffffff"]) }); } },
+  souls:     { name: "SOUL RELEASE", rarity: "legendary", unlock: { stat: "kills", n: 500, text: "500 KILLS" },
+               burst: (add, x, y, r) => { for (let i = 0; i < 3; i++) add({ x: x + (i - 1) * 12, y, vx: (r() - 0.5) * 30, vy: -45 - r() * 25, g: -10, wob: 6, life: 1.6, s: 6, a: 0.85, shape: "soul", c: "#e8f4ff" }); } }
+};
+const COIN_FX = {   // trail: behind each coin flying to the gold counter; pop: when it arrives
+  none:    { name: "NO EFFECT", price: 0 },
+  sparkle: { name: "GOLD SPARKLE", price: 150,
+             trail: (add, x, y, r) => add({ x, y, life: 0.35, s: 3, shape: "star", c: pick(r, ["#ffd34d", "#fff6c0"]) }),
+             pop: (add, x, y, r) => { for (let i = 0; i < 5; i++) { const a = r() * Math.PI * 2; add({ x, y, vx: Math.cos(a) * 90, vy: Math.sin(a) * 90, life: 0.35, s: 4, shape: "star", c: "#ffd34d" }); } } },
+  hearts:  { name: "COIN HEARTS", price: 200,
+             trail: (add, x, y, r) => r() < 0.4 && add({ x, y, vy: -20, life: 0.4, s: 6, shape: "heart", c: "#ff8fb0" }),
+             pop: (add, x, y, r) => { for (let i = 0; i < 3; i++) add({ x: x + (i - 1) * 10, y, vy: -60 - r() * 30, life: 0.6, s: 8, shape: "heart", c: "#ff4f7a" }); } },
+  ring:    { name: "GOLD RING", price: 250,
+             pop: (add, x, y, r) => add({ x, y, life: 0.3, s: 6, grow: 80, shape: "ring", c: "#ffd34d" }) },
+  rainbow: { name: "RAINBOW DUST", price: 400,
+             trail: (add, x, y, r) => add({ x: x + (r() - 0.5) * 6, y: y + (r() - 0.5) * 6, vy: 20, life: 0.4, s: 3, c: hueRnd(r) }),
+             pop: (add, x, y, r) => { for (let i = 0; i < 6; i++) { const a = r() * Math.PI * 2; add({ x, y, vx: Math.cos(a) * 110, vy: Math.sin(a) * 110, life: 0.35, s: 4, c: hueRnd(r) }); } } }
+};
+// How the damage numbers look
+const DMG_STYLES = {
+  none:    { name: "PLAIN", price: 0 },
+  red:     { name: "BLOOD RED", price: 60, fill: "#ff3b3b", edge: "#3a0000" },
+  cyan:    { name: "ICE BLUE", price: 60, fill: "#5ff0ff", edge: "#002a3a" },
+  gold:    { name: "GOLDEN", price: 150, fill: "#f5b921", edge: "#a8740a" },
+  comic:   { name: "COMIC POP", price: 250, fill: "#ffffff", edge: "#000000", size: 22, pop: true },
+  fire:    { name: "FIRE", price: 350, fill: "#ffb02e", edge: "#b01a00", size: 20, pop: true },
+  rainbow: { name: "RAINBOW", price: 600, rainbow: true, edge: "#111111", size: 20, pop: true }
+};
+
 const LOOK_GROUPS = {
   color: { label: "COLOR", items: COLORS },
-  acc:   { label: "ACCESSORIES", items: ACCESSORIES, multi: true }
+  glow:  { label: "GLOW", items: GLOWS },
+  hat:   { label: "HATS", items: HATS },
+  acc:   { label: "FACE", items: ACCESSORIES, multi: true },
+  back:  { label: "BACK", items: BACKS },
+  trail: { label: "TRAILS", items: TRAILS },
+  aura:  { label: "AURA", items: AURAS },
+  kill:  { label: "KILL FX", items: KILL_FX },
+  dmg:   { label: "NUMBERS", items: DMG_STYLES },
+  coin:  { label: "COIN FX", items: COIN_FX }
 };
-const look = { owned: { color: ["yellow"], acc: [] }, equipped: { color: "yellow", acc: [] } };
+const OUTFIT_SLOTS = 3;
+
+// A rarity from the price unless the item names one; free items have none
+function rarityOf(item) {
+  if (item.rarity) return item.rarity;
+  if (!item.price) return null;
+  return item.price < 100 ? "common" : item.price < 300 ? "uncommon" : item.price < 1000 ? "rare" : "legendary";
+}
+
+// Free items are owned from the start; the first one in each group is the default
+const look = { owned: {}, equipped: {}, outfits: Array(OUTFIT_SLOTS).fill(null) };
+for (const [g, info] of Object.entries(LOOK_GROUPS)) {
+  look.owned[g] = Object.keys(info.items).filter((id) => !info.items[id].price && !info.items[id].unlock);
+  look.equipped[g] = info.multi ? [] : look.owned[g][0];
+}
+// Puts on a saved set of items (only the ones he still owns; anything else goes back to the default)
+function applyOutfit(eq) {
+  for (const [g, info] of Object.entries(LOOK_GROUPS)) {
+    if (info.multi) look.equipped[g] = (eq[g] || []).filter((id) => look.owned[g].includes(id));
+    else look.equipped[g] = look.owned[g].includes(eq[g]) ? eq[g] : look.owned[g][0];
+  }
+}
 try {
   const saved = JSON.parse(localStorage.getItem("stickgo-look2") || "{}");
-  if (saved.owned && saved.equipped) {
-    look.owned.color = (saved.owned.color || []).filter((id) => COLORS[id]);
-    look.owned.acc = (saved.owned.acc || []).filter((id) => ACCESSORIES[id]);
-    look.equipped.color = saved.equipped.color;
-    look.equipped.acc = (saved.equipped.acc || []).filter((id) => look.owned.acc.includes(id));
+  for (const [g, info] of Object.entries(LOOK_GROUPS)) {
+    for (const id of (saved.owned || {})[g] || []) if (info.items[id] && !look.owned[g].includes(id)) look.owned[g].push(id);
   }
+  applyOutfit(saved.equipped || {});
+  if (Array.isArray(saved.outfits)) look.outfits = look.outfits.map((_, i) => saved.outfits[i] || null);
 } catch (e) { /* a broken save just means the defaults */ }
-if (!look.owned.color.includes("yellow")) look.owned.color.unshift("yellow");   // yellow is always the default
-if (!look.owned.color.includes(look.equipped.color)) look.equipped.color = "yellow";
 function saveLook() { localStorage.setItem("stickgo-look2", JSON.stringify(look)); }
 
-// Rainbow drifts slowly through the colours (a gentle fade, not a flash)
+// Gives him any item whose unlock goal he has reached, and says so if he is mid-run
+function checkUnlocks() {
+  for (const [g, info] of Object.entries(LOOK_GROUPS)) {
+    for (const [id, item] of Object.entries(info.items)) {
+      if (!item.unlock || look.owned[g].includes(id) || STATS[item.unlock.stat] < item.unlock.n) continue;
+      look.owned[g].push(id);
+      saveLook();
+      if (state === "running") {
+        popups.push({ x: W / 2, y: 190, t: 0, text: `UNLOCKED: ${item.name}`, life: 2.6, unlock: true });
+        sfx.point();
+      }
+    }
+  }
+}
+
 function colorFilter(id) {
   const c = COLORS[id] || COLORS.yellow;
-  if (c.rainbow) return `hue-rotate(${Math.round((performance.now() / 1000 * 50) % 360)}deg)`;
-  return c.filter;
+  return c.anim ? c.anim(performance.now() / 1000) : c.filter;
 }
 
 // Where his head is in every frame of every sheet: [x, y] in frame pixels, so accessories can
 // follow it (found by tools/find_hero_heads.py). The head is a circle about 6 pixels in radius.
 const HERO_HEADS = {"idle":[[58,16],[58,18],[58,18],[58,16]],"run":[[72,29],[70,28],[71,27],[70,28],[71,29],[72,29],[70,28],[71,27],[70,28],[71,29]],"jump":[[69,9],[71,7],[69,9]],"jump_peak":[[64,8],[60,8],[58,8]],"fall":[[58,7],[59,7],[59,7],[59,7]],"dash":[[56,28],[56,28],[56,28],[56,28],[56,28],[56,28],[59,31],[59,31],[59,31],[59,31],[59,31]],"attack1":[[57,26],[59,26],[61,22],[60,22],[54,22],[51,32],[50,34],[54,21],[54,15],[54,14]],"attack2":[[58,32],[60,23],[58,24],[58,24],[59,22],[62,26],[64,24],[58,24]],"attack3":[[56,23],[66,29],[63,28],[68,33],[68,33],[68,24],[64,22],[62,16],[60,18],[60,16]],"skill1":[[55,39],[55,40],[55,40],[55,40],[64,24],[64,24],[68,23],[68,23],[68,23]],"skill2":[[65,19],[67,18],[66,18],[65,20],[66,18],[68,20],[65,18],[65,18],[66,18],[56,23],[66,29],[63,28],[68,33],[68,33],[68,24],[64,22],[62,16],[60,18],[60,16]],"skill3":[[60,17],[55,19],[57,14],[57,14],[60,18],[86,18],[87,21],[87,21],[67,24],[69,23],[76,21],[76,12],[81,18],[72,20],[72,20],[72,20],[72,20],[72,20],[72,20],[52,14],[60,17],[60,22],[57,17],[57,17],[58,16]],"start_skill3":[[58,20],[62,21],[61,21]],"hit1":[[45,18],[45,18],[45,18]],"hit3":[[58,22],[58,22],[58,22]]};
 
+// Paints pixel rectangles relative to a point (the head), in sprite pixels
+const pxAt = (hx, hy) => (color, x, y, w, h) => { ctx.fillStyle = color; ctx.fillRect(Math.round(hx + x), Math.round(hy + y), w, h); };
+
 // Pixel-art accessories, drawn around the head's centre (hx, hy) in sprite pixels. He faces right.
 function drawAccessory(id, hx, hy) {
-  const px = (color, x, y, w, h) => { ctx.fillStyle = color; ctx.fillRect(Math.round(hx + x), Math.round(hy + y), w, h); };
+  const px = pxAt(hx, hy);
   switch (id) {
     case "shades":
       px("#111", -5, -3, 12, 1);
@@ -1110,13 +1278,305 @@ function drawAccessory(id, hx, hy) {
       px("rgba(200,235,255,0.55)", 3, -2, 3, 3);
       px("#e8b923", 4, 2, 1, 6);
       break;
+    case "mustache":
+      px("#3a2412", 2, 2, 5, 1);
+      px("#3a2412", 1, 3, 2, 1);
+      px("#3a2412", 6, 3, 2, 1);
+      break;
+    case "angry":
+      px("#111", 1, -4, 1, 1);
+      px("#111", 2, -3, 3, 1);
+      px("#ff2020", 3, -2, 2, 1);
+      break;
+    case "mask":
+      px("#1a1a22", -5, 0, 11, 3);
+      px("#1a1a22", -4, 3, 9, 2);
+      px("#3a3a48", -5, 0, 11, 1);
+      break;
+    case "scar":
+      px("#b02a2a", 2, -5, 1, 1);
+      px("#b02a2a", 3, -4, 1, 1);
+      px("#b02a2a", 4, -3, 1, 1);
+      px("#b02a2a", 5, -2, 1, 1);
+      px("#b02a2a", 2, -3, 1, 1);
+      px("#b02a2a", 5, -4, 1, 1);
+      break;
+    case "visor":
+      px("#1a1a22", -6, -3, 13, 1);
+      px("#2ad8ff", 0, -3, 7, 3);
+      px("#c8f6ff", 1, -3, 3, 1);
+      break;
+    case "skull":
+      for (let y = -6; y <= 6; y++) { const w = Math.round(Math.sqrt(36 - y * y)); px("#f2efe4", -w, y, w * 2 + 1, 1); }
+      px("#111", 0, -2, 2, 2);
+      px("#111", 4, -2, 2, 2);
+      px("#111", 3, 1, 1, 1);
+      px("#111", 1, 3, 5, 1);
+      px("#f2efe4", 2, 3, 1, 1);
+      px("#f2efe4", 4, 3, 1, 1);
+      break;
   }
 }
 
-function drawAccessories(accs, sheet, frame) {
-  const head = (HERO_HEADS[sheet] || [])[frame];
-  if (!head) return;
-  for (const id of accs) drawAccessory(id, head[0], head[1]);
+function drawHat(id, hx, hy, t) {
+  const px = pxAt(hx, hy);
+  switch (id) {
+    case "beanie":
+      px("#3a6ad8", -6, -9, 13, 3);
+      px("#3a6ad8", -4, -11, 9, 2);
+      px("#2a4ea8", -7, -7, 15, 2);
+      px("#ffffff", -1, -13, 3, 2);
+      break;
+    case "cowboy":
+      px("#8a5a2b", -10, -7, 21, 2);
+      px("#8a5a2b", -5, -13, 11, 6);
+      px("#5e3a18", -5, -8, 11, 1);
+      px("#5e3a18", -1, -13, 3, 1);
+      break;
+    case "topknot":
+      px("#1a1a1a", -6, -7, 11, 2);
+      px("#1a1a1a", -5, -11, 4, 3);
+      px("#e53030", -5, -8, 4, 1);
+      break;
+    case "party":
+      for (let i = 0; i < 9; i++) {
+        const w = 9 - i;
+        px(["#ff4fa3", "#ffe14d", "#4ad6ff"][Math.floor(i / 2) % 3], -Math.floor(w / 2), -7 - i, w, 1);
+      }
+      px("#ffffff", -1, -18, 2, 2);
+      break;
+    case "tophat":
+      px("#111", -8, -7, 17, 2);
+      px("#111", -5, -16, 11, 9);
+      px("#d02020", -5, -9, 11, 2);
+      px("#444", -4, -15, 1, 5);
+      break;
+    case "wizard":
+      px("#5b2a9e", -9, -7, 18, 2);
+      for (let i = 0; i < 11; i++) { const w = Math.max(1, 11 - i); px("#7b3fd0", Math.round(-w / 2 - i * 0.5), -8 - i, w, 1); }
+      px("#ffe14d", -1, -11, 1, 1);
+      px("#ffe14d", -3, -14, 1, 1);
+      break;
+    case "halo": {
+      const y = -13 + Math.round(Math.sin(t * 3));
+      px("#ffe14d", -4, y, 9, 1);
+      px("#ffe14d", -4, y + 2, 9, 1);
+      px("#ffe14d", -6, y + 1, 2, 1);
+      px("#ffe14d", 5, y + 1, 2, 1);
+      break;
+    }
+    case "crown":
+      px("#e8b923", -5, -9, 11, 3);
+      px("#e8b923", -5, -11, 2, 2);
+      px("#e8b923", -1, -12, 3, 3);
+      px("#e8b923", 4, -11, 2, 2);
+      px("#fff2a8", -5, -9, 11, 1);
+      px("#e53030", -1, -8, 2, 1);
+      px("#3d8bff", -4, -8, 1, 1);
+      px("#3d8bff", 3, -8, 1, 1);
+      break;
+    case "horns":
+      px("#8e1414", -5, -8, 2, 2);
+      px("#8e1414", -6, -10, 2, 2);
+      px("#2a0a0a", -6, -12, 1, 2);
+      px("#8e1414", 3, -8, 2, 2);
+      px("#8e1414", 4, -10, 2, 2);
+      px("#2a0a0a", 5, -12, 1, 2);
+      break;
+  }
+}
+
+// Back items hang behind him (drawn before his body); they flow out further while he runs
+function drawBack(id, hx, hy, sheet, t) {
+  const px = pxAt(hx, hy);
+  const moving = sheet === "run" || sheet === "dash";
+  switch (id) {
+    case "cape": case "warlord": {
+      const main = id === "cape" ? "#d82a2a" : "#3a0c14", edge = id === "cape" ? "#8e1414" : "#e8b923";
+      const flow = moving ? 1 : 0.3;
+      for (let i = 0; i < 17; i++) {
+        const sway = Math.sin(t * (moving ? 12 : 3) - i * 0.45) * (0.4 + i * 0.08) * (moving ? 1.6 : 0.8);
+        const right = Math.round(-i * 0.6 * flow + sway), w = 5 + Math.floor(i / 4);
+        px(main, right - w, 6 + i, w, 1);
+        px(edge, right - w, 6 + i, 1, 1);
+        if (i === 16) px(edge, right - w, 6 + i, w, 1);
+      }
+      if (id === "warlord") px("#e8b923", -2, 6, 3, 2);
+      break;
+    }
+    case "wings": {
+      const flap = Math.sin(t * (moving ? 14 : 4)) * 0.3;
+      for (const [ox, shade, tilt] of [[3, "#c9d3e0", 0.15], [-1, "#ffffff", 0]]) {
+        ctx.save();
+        ctx.translate(hx - 3 + ox, hy + 10);
+        ctx.rotate(0.6 + flap + tilt);
+        for (let j = 0; j < 5; j++) {
+          const len = 17 - j * 3;
+          ctx.fillStyle = shade;
+          ctx.fillRect(-len, j * 2, len, 2);
+          ctx.fillStyle = "#9aa6b8";
+          ctx.fillRect(-len, j * 2 + 1, 2, 1);
+        }
+        ctx.restore();
+      }
+      break;
+    }
+    case "backpack":
+      px("#7a5230", -10, 7, 6, 10);
+      px("#5a3a20", -10, 7, 6, 3);
+      px("#c9a36a", -8, 9, 2, 1);
+      px("#5a3a20", -4, 8, 1, 8);
+      break;
+    case "sheath":
+      ctx.save();
+      ctx.translate(hx - 3, hy + 16);
+      ctx.rotate(-0.9);
+      ctx.fillStyle = "#1a1a22"; ctx.fillRect(-16, -1, 22, 3);
+      ctx.fillStyle = "#e8b923"; ctx.fillRect(6, -2, 1, 5);
+      ctx.fillStyle = "#e8e8f0"; ctx.fillRect(7, -1, 7, 3);
+      ctx.fillStyle = "#1a1a22"; for (let i = 8; i < 14; i += 2) ctx.fillRect(i, -1, 1, 3);
+      ctx.restore();
+      break;
+    case "jetpack": {
+      const fl = 2 + Math.floor((t * 20) % 3) + (moving ? 3 : 0);
+      px("#9aa3ad", -13, 7, 4, 10);
+      px("#7a838d", -9, 7, 4, 10);
+      px("#e53030", -13, 6, 4, 1);
+      px("#e53030", -9, 6, 4, 1);
+      px("#ffb02e", -12, 17, 2, fl);
+      px("#ffb02e", -8, 17, 2, fl);
+      px("#fff0a0", -12, 17, 2, 1);
+      px("#fff0a0", -8, 17, 2, 1);
+      break;
+    }
+  }
+}
+
+// A sheet in one flat colour (for the glow outline), made once per sheet and colour
+const silCache = {};
+function silhouette(img, key, color) {
+  key += color;
+  if (silCache[key]) return silCache[key];
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const g = c.getContext("2d");
+  g.drawImage(img, 0, 0);
+  g.globalCompositeOperation = "source-in";
+  g.fillStyle = color;
+  g.fillRect(0, 0, c.width, c.height);
+  return (silCache[key] = c);
+}
+// The outline: his silhouette one pixel out on every side, with a soft blur of the same colour
+function drawGlow(img, key, frame, glow, t) {
+  const color = glow.anim ? "#ff3030" : glow.color;
+  const sil = silhouette(img, key, color);
+  ctx.save();
+  if (glow.anim) ctx.filter = `hue-rotate(${Math.round((t * 90) % 360)}deg)`;
+  if (glow.pulse) ctx.globalAlpha *= 0.55 + 0.45 * Math.sin(t * 5);
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 10;
+  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) ctx.drawImage(sil, frame * FRAME_W, 0, FRAME_W, FRAME_H, dx, dy, FRAME_W, FRAME_H);
+  ctx.restore();
+}
+
+// Orbiting orbs (an aura): the ones behind him are drawn before him, the rest after
+function drawOrbs(cx, cy, color, t, front) {
+  for (let i = 0; i < 3; i++) {
+    const a = t * 2.5 + i * Math.PI * 2 / 3;
+    if ((Math.sin(a) > 0) !== front) continue;
+    const x = Math.round(cx + Math.cos(a) * 24), y = Math.round(cy + Math.sin(a) * 7 + Math.sin(t * 3 + i) * 3);
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = color;
+    ctx.fillRect(x - 4, y - 4, 8, 8);
+    ctx.globalAlpha = 1;
+    ctx.fillRect(x - 2, y - 2, 4, 4);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(x - 1, y - 1, 2, 2);
+  }
+}
+
+// One cosmetic particle, t seconds after it was made
+function drawFxPart(p, t) {
+  const k = t / p.life;
+  if (k < 0 || k >= 1) return;
+  const x = p.x + p.vx * t + (p.wob ? Math.sin(t * 6 + p.ph) * p.wob : 0);
+  const y = p.y + p.vy * t + 0.5 * p.g * t * t;
+  const s = Math.max(1, p.s + (p.grow || 0) * t);
+  ctx.globalAlpha = (p.a || 1) * (1 - k);
+  ctx.fillStyle = p.c;
+  const R = Math.round;
+  switch (p.shape) {
+    case "star": {
+      const u = Math.max(2, R(s / 2));
+      ctx.fillRect(R(x - s), R(y - u / 2), R(s * 2), u);
+      ctx.fillRect(R(x - u / 2), R(y - s), u, R(s * 2));
+      break;
+    }
+    case "heart": {
+      const u = Math.max(1, R(s / 4));
+      for (const [r, row] of [".X.X.", "XXXXX", ".XXX.", "..X.."].entries()) {
+        for (let i = 0; i < 5; i++) if (row[i] === "X") ctx.fillRect(R(x - 2.5 * u) + i * u, R(y - 2 * u) + r * u, u, u);
+      }
+      break;
+    }
+    case "petal": ctx.fillRect(R(x), R(y), R(s * 1.6), Math.max(1, R(s * 0.8))); break;
+    case "ring":
+      ctx.strokeStyle = p.c;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x, y, s, 0, Math.PI * 2); ctx.stroke();
+      break;
+    case "soul":
+      ctx.fillRect(R(x - s), R(y - s), R(s * 2), R(s * 2));
+      ctx.fillRect(R(x - s * 0.6), R(y + s), R(s * 1.2), R(s * 0.9));
+      ctx.fillStyle = "#1a2a40";
+      ctx.fillRect(R(x - s * 0.5), R(y - s * 0.3), 2, 3);
+      ctx.fillRect(R(x + s * 0.2), R(y - s * 0.3), 2, 3);
+      break;
+    default: ctx.fillRect(R(x - s / 2), R(y - s / 2), R(s), R(s));
+  }
+}
+// Adds particles to a list (never more than `max`); dvx shifts them sideways (the preview's fake running)
+const fxAdder = (list, dvx = 0, max = 600, rnd = Math.random) => (p) => {
+  if (list.length < max) list.push({ t: 0, vx: 0, vy: 0, g: 0, ph: rnd() * 6, ...p, vx: (p.vx || 0) + dvx });
+};
+let fxParts = [];               // cosmetic particles in the game
+const addFx = (p) => fxAdder(fxParts)(p);
+let trailAcc = 0, auraAcc = 0;
+
+// Emits his trail and aura particles; called every frame of a run
+function emitCosmetics(dt) {
+  const cx = player.x + player.w / 2, feet = player.y + player.h;
+  const tr = TRAILS[look.equipped.trail], au = AURAS[look.equipped.aura];
+  if (tr.emit && (player.moving || player.dash > 0)) {
+    trailAcc += dt * tr.rate * (player.dash > 0 ? 3 : 1);
+    for (; trailAcc >= 1; trailAcc--) tr.emit(addFx, cx - player.facing * 6, feet, player.facing, Math.random);
+  }
+  if (au.emit) {
+    auraAcc += dt * au.rate;
+    for (; auraAcc >= 1; auraAcc--) au.emit(addFx, cx, feet, Math.random);
+  }
+}
+
+// A damage number in one of the DMG_STYLES
+function drawDmgText(id, text, x, y, t, hue) {
+  const st = DMG_STYLES[id] || DMG_STYLES.none;
+  ctx.save();
+  ctx.translate(x, y);
+  if (st.pop) { const k = 1 + 0.5 * Math.max(0, 1 - t / 0.15); ctx.scale(k, k); }
+  ctx.font = `bold ${st.size || 16}px 'Courier New', monospace`;
+  ctx.textAlign = "center";
+  if (!st.fill && !st.rainbow) {
+    ctx.fillStyle = colors.ink;
+    ctx.fillText(text, 0, 0);
+  } else {
+    ctx.lineWidth = 4;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = st.edge;
+    ctx.strokeText(text, 0, 0);
+    ctx.fillStyle = st.rainbow ? `hsl(${Math.round(hue)}, 100%, 62%)` : st.fill;
+    ctx.fillText(text, 0, 0);
+  }
+  ctx.restore();
 }
 
 // Draws into another canvas by pointing ctx at it for a moment
@@ -1127,35 +1587,147 @@ function withContext(g, fn) {
   try { fn(); } finally { ctx = savedCtx; colors = savedColors; }
 }
 
-// The big preview: the idle stickman as he will look in the game
+// The big preview: the stickman as he will look in the game. On the trail tab he runs; on the
+// kill / numbers / coin tabs those effects play next to him.
+let pvParts = [], pvNums = [], pvLast = 0, pvTimer = 0, pvTrailAcc = 0, pvAuraAcc = 0, pvCoinT = 0;
 function drawLookPreview() {
   const cv = document.getElementById("lookPreview");
   const g = cv.getContext("2d");
+  const now = performance.now() / 1000, dt = Math.min(0.1, pvLast ? now - pvLast : 0);
+  pvLast = now;
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, cv.width, cv.height);
-  const sc = 4.2;
-  const fr = stateFrame(HS.idle, (performance.now() / 1000 * (HS.idle.fps || 8)) % HS.idle.frames.length);
-  withContext(g, () => drawSprite(fr.sheet, fr.frame, cv.width / 2 + 6 * sc, cv.height - 28, 1, 0, sc));
+  const sc = 4.2, k = sc / SC, ox = cv.width / 2 + 6 * sc, oy = cv.height - 28;
+  const lk = look.equipped, running = lookTab === "trail";
+  const tr = TRAILS[lk.trail], au = AURAS[lk.aura], cfx = COIN_FX[lk.coin];
+
+  // Effects are worked out in game units around his feet at (0, 0)
+  if (running && tr.emit) {
+    pvTrailAcc += dt * tr.rate;
+    for (; pvTrailAcc >= 1; pvTrailAcc--) tr.emit(fxAdder(pvParts, -110, 300), -6, 0, 1, Math.random);
+  }
+  if (au.emit) {
+    pvAuraAcc += dt * au.rate;
+    for (; pvAuraAcc >= 1; pvAuraAcc--) au.emit(fxAdder(pvParts, 0, 300), 0, 0, Math.random);
+  }
+  pvTimer += dt;
+  if (lookTab === "kill" && pvTimer > 1.4) {
+    pvTimer = 0;
+    if (KILL_FX[lk.kill].burst) KILL_FX[lk.kill].burst(fxAdder(pvParts, 0, 300), 30, -40, Math.random);
+  }
+  if (lookTab === "dmg" && pvTimer > 0.45) {
+    pvTimer = 0;
+    pvNums.push({ x: 18 + Math.random() * 26, y: -62 - Math.random() * 12, t: 0, text: String(randInt(8, 40)), hue: Math.random() * 360 });
+  }
+  let coin = null;
+  if (lookTab === "coin") {   // a coin flies up past him, over and over
+    pvCoinT += dt;
+    if (pvCoinT > 0.9) { pvCoinT = 0; if (cfx.pop) cfx.pop(fxAdder(pvParts, 0, 300), 34, -74, Math.random); }
+    const q = pvCoinT / 0.9;
+    coin = { x: -30 + q * 64, y: -10 - q * 64 - Math.sin(q * Math.PI) * 14, spin: now * 8 };
+    if (cfx.trail && Math.random() < dt * 25) cfx.trail(fxAdder(pvParts, 0, 300), coin.x, coin.y, Math.random);
+  }
+  for (const p of pvParts) p.t += dt;
+  pvParts = pvParts.filter((p) => p.t < p.life);
+  for (const n of pvNums) { n.t += dt; n.y -= 40 * dt; }
+  pvNums = pvNums.filter((n) => n.t < 0.8);
+
+  withContext(g, () => {
+    g.setTransform(k, 0, 0, k, ox, oy);
+    if (au.orbs) drawOrbs(0, -32, au.orbs, now, false);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    const st = running ? HS.run : HS.idle;
+    const fr = stateFrame(st, (now * (st.fps || 8)) % st.frames.length);
+    drawSprite(fr.sheet, fr.frame, ox, oy, 1, 0, sc);
+    g.setTransform(k, 0, 0, k, ox, oy);
+    if (au.orbs) drawOrbs(0, -32, au.orbs, now, true);
+    for (const p of pvParts) drawFxPart(p, p.t);
+    g.globalAlpha = 1;
+    if (coin) drawCoin(coin);
+    for (const n of pvNums) {
+      g.globalAlpha = Math.min(1, (0.8 - n.t) / 0.3);
+      drawDmgText(lk.dmg, n.text, n.x, n.y, n.t, n.hue);
+    }
+    g.globalAlpha = 1;
+  });
 }
 
+// A little random generator that always gives the same numbers for the same seed (for the icons)
+function seeded(seed) {
+  let s = seed >>> 0 || 1;
+  return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+}
+const NO_LOOK = { color: "yellow", acc: [] };
+
+// The card pictures. Effects loop: a stream for trails and auras, a burst for kills and coins.
 function drawLookIcon(cv, group, id) {
   const g = cv.getContext("2d");
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, cv.width, cv.height);
-  if (group === "color") {
-    const sc = 1.8, fr = stateFrame(HS.idle, 0);
-    withContext(g, () => drawSprite(fr.sheet, fr.frame, cv.width / 2 + 6 * sc, cv.height - 6, 1, 0, sc, id, []));
-  } else {
-    const S = cv.height / 24;
-    g.setTransform(S, 0, 0, S, cv.width / 2, cv.height * 0.45);
-    withContext(g, () => {
+  const now = performance.now() / 1000;
+  const item = LOOK_GROUPS[group].items[id];
+  const hero = (lk, sc = 1.8) => {
+    const fr = stateFrame(HS.idle, (now * (HS.idle.fps || 8)) % HS.idle.frames.length);
+    drawSprite(fr.sheet, fr.frame, cv.width / 2 + 6 * sc, cv.height - 6, 1, 0, sc, lk);
+  };
+  withContext(g, () => {
+    const none = id === "none";
+    if (group === "color") hero({ ...NO_LOOK, color: id });
+    else if (group === "glow") hero({ ...NO_LOOK, glow: id });
+    else if (group === "back") hero({ ...NO_LOOK, back: id }, 2.6);
+    else if (group === "hat" || group === "acc") {
+      const S = cv.height / 30;
+      g.setTransform(S, 0, 0, S, cv.width / 2, cv.height * 0.62);
       g.fillStyle = "#fbf236";
       g.beginPath(); g.arc(0, 0, 6, 0, Math.PI * 2); g.fill();
       g.fillStyle = "#d0c817";
       g.fillRect(-1, 5, 2, 9);
-      drawAccessory(id, 0, 0);
-    });
+      if (group === "acc") drawAccessory(id, 0, 0);
+      else drawHat(id, 0, 0, now);
+    } else if (none) {
+      g.fillStyle = "#c9c2d6";
+      g.font = "bold 22px 'Courier New', monospace";
+      g.textAlign = "center";
+      g.fillText("NONE", cv.width / 2, cv.height / 2 + 8);
+    } else if (group === "dmg") {
+      g.setTransform(2, 0, 0, 2, cv.width / 2, cv.height / 2 + 10);
+      const t = (now % 1.2);
+      drawDmgText(id, "27", 0, -t * 6, t, (now * 120) % 360);
+    } else if (group === "aura") {
+      const sc = 1.8, k = sc / SC;
+      if (item.orbs) { g.setTransform(k, 0, 0, k, cv.width / 2 + 6 * sc, cv.height - 6); drawOrbs(0, -32, item.orbs, now, false); g.setTransform(1, 0, 0, 1, 0, 0); }
+      hero(NO_LOOK, sc);
+      g.setTransform(k, 0, 0, k, cv.width / 2 + 6 * sc, cv.height - 6);
+      if (item.orbs) drawOrbs(0, -32, item.orbs, now, true);
+      if (item.emit) loopStream(item.rate, (add, r) => item.emit(add, 0, 0, r), now, 0);
+    } else {
+      const z = group === "kill" ? 1 : 2;
+      g.setTransform(z, 0, 0, z, cv.width / 2, cv.height / 2 + 14 * z);
+      if (group === "trail") loopStream(item.rate, (add, r) => item.emit(add, 22, 6, 1, r), now, -40);
+      else if (group === "kill") loopBurst(0.8, (add, r) => item.burst(add, 0, -10, r), now);
+      else if (group === "coin") {
+        if (item.trail) loopStream(20, (add, r) => item.trail(add, 24 - r() * 48, -8, r), now, 0);
+        if (item.pop) loopBurst(0.9, (add, r) => item.pop(add, 0, -8, r), now);
+        drawCoin({ x: 0, y: -8, spin: now * 6 });
+      }
+    }
+    g.globalAlpha = 1;
+  });
+}
+// Particles made at a steady rate, replayed on a loop so the icon never runs dry
+function loopStream(rate, emit, now, dvx) {
+  const r = seeded(7), n = Math.min(60, Math.ceil(rate * 1.6)), period = n / rate, list = [];
+  for (let i = 0; i < n; i++) {
+    const before = list.length;
+    emit(fxAdder(list, dvx, 999, r), r);
+    for (let j = before; j < list.length; j++) list[j].born = i / rate;
   }
+  for (const p of list) drawFxPart(p, (((now - p.born) % period) + period) % period);
+}
+function loopBurst(period, burst, now) {
+  const list = [], r = seeded(11);
+  burst(fxAdder(list, 0, 999, r), r);
+  for (const p of list) drawFxPart(p, now % period);
 }
 
 let lookTab = "color";
@@ -1167,30 +1739,38 @@ function refreshLook() {
   const row = document.getElementById("lookItems");
   tabs.innerHTML = "";
   row.innerHTML = "";
-  for (const [group, info] of Object.entries(LOOK_GROUPS)) {
+  for (const [group, label] of [...Object.entries(LOOK_GROUPS).map(([g, info]) => [g, info.label]), ["outfits", "OUTFITS"]]) {
     const tab = document.createElement("button");
     tab.className = "tab" + (group === lookTab ? " active" : "");
-    tab.style.setProperty("--rar", "#ff8a1f");
-    tab.textContent = info.label;
-    tab.addEventListener("click", () => { lookTab = group; lookMessage(""); refreshLook(); });
+    tab.style.setProperty("--rar", group === "outfits" ? "#ffd34d" : "#ff8a1f");
+    tab.textContent = label;
+    tab.addEventListener("click", () => {
+      if (lookTab !== group) { pvParts = []; pvNums = []; pvTimer = 0; }
+      lookTab = group;
+      lookMessage("");
+      refreshLook();
+    });
     tabs.appendChild(tab);
   }
+  if (lookTab === "outfits") { refreshOutfits(row); drawLookPreview(); return; }
   const multi = LOOK_GROUPS[lookTab].multi;
   for (const [id, item] of Object.entries(LOOK_GROUPS[lookTab].items)) {
     const owned = look.owned[lookTab].includes(id);
     const equipped = multi ? look.equipped[lookTab].includes(id) : look.equipped[lookTab] === id;
+    const rar = RARITIES[rarityOf(item)];
     const card = document.createElement("div");
     card.className = "card" + (equipped ? " equipped" : "");
-    card.style.setProperty("--rar", "#ff8a1f");
+    card.style.setProperty("--rar", rar ? rar.color : "#ff8a1f");
+    if (rar) card.style.setProperty("--rar-glow", rar.glow);
     card.innerHTML = `<canvas width="192" height="120"></canvas><div class="name">${item.name}</div><button></button>`;
     const cv = card.querySelector("canvas");
-    if (item.rainbow) cv.dataset.anim = id;
     cv.dataset.group = lookTab;
     cv.dataset.id = id;
     drawLookIcon(cv, lookTab, id);
     const btn = card.querySelector("button");
     if (equipped) btn.textContent = multi ? "TAKE OFF" : "EQUIPPED";
     else if (owned) btn.textContent = "EQUIP";
+    else if (item.unlock) { btn.textContent = item.unlock.text; btn.classList.add("cant", "locked"); }
     else { btn.innerHTML = `<span class="coin"></span>${fmt(item.price)}`; btn.classList.toggle("cant", totalGold < item.price); }
     btn.addEventListener("click", () => lookTap(lookTab, id));
     row.appendChild(card);
@@ -1198,10 +1778,53 @@ function refreshLook() {
   drawLookPreview();
 }
 
+// Outfit slots: save what he is wearing now, or put a saved outfit back on
+function refreshOutfits(row) {
+  look.outfits.forEach((fit, i) => {
+    const card = document.createElement("div");
+    card.className = "card outfit";
+    card.style.setProperty("--rar", "#ffd34d");
+    card.innerHTML = `<canvas width="192" height="120"></canvas><div class="name">OUTFIT ${i + 1}</div><button>WEAR</button><button>SAVE</button>`;
+    const cv = card.querySelector("canvas");
+    const g = cv.getContext("2d");
+    if (fit) {
+      withContext(g, () => {
+        const sc = 1.8, fr = stateFrame(HS.idle, 0);
+        drawSprite(fr.sheet, fr.frame, cv.width / 2 + 6 * sc, cv.height - 6, 1, 0, sc, { ...NO_LOOK, ...fit });
+      });
+    } else {
+      g.fillStyle = "#c9c2d6";
+      g.font = "bold 22px 'Courier New', monospace";
+      g.textAlign = "center";
+      g.fillText("EMPTY", cv.width / 2, cv.height / 2 + 8);
+    }
+    const [wear, save] = card.querySelectorAll("button");
+    wear.classList.toggle("cant", !fit);
+    wear.addEventListener("click", () => {
+      if (!fit) { lookMessage("THIS SLOT IS EMPTY — TAP SAVE FIRST"); return; }
+      applyOutfit(fit);
+      saveLook();
+      lookMessage(`OUTFIT ${i + 1} ON`);
+      refreshLook();
+    });
+    save.addEventListener("click", () => {
+      look.outfits[i] = JSON.parse(JSON.stringify(look.equipped));
+      saveLook();
+      lookMessage(`SAVED TO OUTFIT ${i + 1}`);
+      refreshLook();
+    });
+    row.appendChild(card);
+  });
+}
+
 // Tapping an item equips it; if you don't own it yet it is bought first
 function lookTap(group, id) {
   const info = LOOK_GROUPS[group], item = info.items[id];
   if (!look.owned[group].includes(id)) {
+    if (item.unlock) {
+      lookMessage(`LOCKED — ${item.unlock.text} (${fmt(Math.min(STATS[item.unlock.stat], item.unlock.n))}/${fmt(item.unlock.n)})`);
+      return;
+    }
     if (totalGold < item.price) { lookMessage(`NOT ENOUGH GOLD — NEED ${fmt(item.price - totalGold)} MORE`); return; }
     totalGold -= item.price;
     localStorage.setItem("stickgo-gold", totalGold);
@@ -1220,16 +1843,28 @@ function lookTap(group, id) {
   refreshLook();
 }
 
+// RANDOM: a random outfit from what he already owns (never spends gold)
+function randomLook() {
+  const r = Math.random;
+  for (const [g, info] of Object.entries(LOOK_GROUPS)) {
+    if (info.multi) look.equipped[g] = look.owned[g].filter(() => r() < 0.25).slice(0, 2);
+    else look.equipped[g] = pick(r, look.owned[g]);
+  }
+  saveLook();
+  lookMessage("RANDOM LOOK!");
+  refreshLook();
+}
+
 function lookMessage(text) { document.getElementById("lookMsg").textContent = text; }
 
-// Keeps the preview running and the animated items (rainbow) moving
+// Keeps the preview and the card pictures moving
 function animateLook() {
   if (!menus.look.classList.contains("open")) { clearInterval(lookTimer); lookTimer = null; return; }
   if (lookTimer) return;
   lookTimer = setInterval(() => {
     drawLookPreview();
-    for (const cv of document.querySelectorAll("#lookItems canvas[data-anim]")) drawLookIcon(cv, cv.dataset.group, cv.dataset.id);
-  }, 70);
+    for (const cv of document.querySelectorAll("#lookItems canvas[data-group]")) drawLookIcon(cv, cv.dataset.group, cv.dataset.id);
+  }, 50);
 }
 
 // Called by the Android app when the phone's back button is pressed.
@@ -1632,6 +2267,7 @@ function inputDir() {
 
 function startWave(n) {
   wave = n;
+  reachWave(n);
   setMapForWave(n);
   waveBanner = 2.2;
   bossDue = n % 5 === 0;
@@ -1874,6 +2510,8 @@ function hurtFoe(o, dmg, push, stagger = true) {
     o.fling = Math.sign(push) || player.facing;
     killEnemy(o, randInt(d.gold[0], d.gold[1]));
     kills++;
+    bumpStat("kills");
+    if (o.kind === "boss") bumpStat("bosses");
     score += d.pts;
     return;
   }
@@ -1882,7 +2520,7 @@ function hurtFoe(o, dmg, push, stagger = true) {
   if (stagger && o.kind !== "boss" && o.ai !== "charge") { o.stagger = heavy ? 0.2 : 0.4; o.ai = "walk"; o.timer = 0; o.attack = 0; o.draw = 0; }
   o.flash = 0.12;
   shakeTime = Math.max(shakeTime, 0.08);
-  popups.push({ x: o.x + o.w / 2, y: o.y - 10, t: 0, text: String(dmg) });
+  popups.push({ x: o.x + o.w / 2, y: o.y - 10, t: 0, text: String(dmg), dmg: true, hue: Math.random() * 360 });
   if (player.act && player.act.basic && weaponFx()) { weaponImpact(o); return; }
   burst(o.x + o.w / 2, o.y + 40, 8, "#ffe14d", 240);
   sfx.clang();
@@ -2043,6 +2681,9 @@ function update(dt) {
     p.y += p.vy * dt;
   }
   sparks = sparks.filter((p) => p.t < p.life);
+  emitCosmetics(dt);
+  for (const p of fxParts) p.t += dt;
+  fxParts = fxParts.filter((p) => p.t < p.life);
   for (const m of impacts) m.t += dt;
   impacts = impacts.filter((m) => m.t < 0.3);
   updateCoins(dt);
@@ -2080,6 +2721,8 @@ function killEnemy(o, gold = 1 + Math.floor(Math.random() * 3)) {
   // Show how much gold he dropped, floating up from where he fell
   dropGold(o.x + o.w / 2, o.y + 20, gold, o.y - 6);
   dropPotions(o.x + o.w / 2, o.y + 24, o.kind === "boss");
+  const kfx = KILL_FX[look.equipped.kill];
+  if (kfx.burst) kfx.burst(addFx, o.x + o.w / 2, o.y + o.h * 0.45, Math.random);
 }
 
 // Enemies sometimes drop a potion (red = health, blue = mana); bosses drop one of each. He picks one up by walking over it.
@@ -2138,8 +2781,14 @@ function updateCoins(dt) {
     } else {                // the flight, speeding up
       const dx = COIN_TARGET.x - c.x, dy = COIN_TARGET.y - c.y, d = Math.hypot(dx, dy) || 1;
       const step = (500 + (c.age - c.hold) * 3000) * dt;
-      if (d <= step + 6) { c.taken = true; collectCoin(); sfx.coin(); }
-      else { c.x += (dx / d) * step; c.y += (dy / d) * step; }
+      const cfx = COIN_FX[look.equipped.coin];
+      if (d <= step + 6) {
+        c.taken = true; collectCoin(); sfx.coin();
+        if (cfx.pop) cfx.pop(addFx, COIN_TARGET.x, COIN_TARGET.y, Math.random);
+      } else {
+        c.x += (dx / d) * step; c.y += (dy / d) * step;
+        if (cfx.trail && Math.random() < dt * 25) cfx.trail(addFx, c.x, c.y, Math.random);
+      }
     }
   }
   coins = coins.filter((c) => !c.taken);
@@ -3157,10 +3806,10 @@ function drawHeldWeapon(skin, sheet, frame) {
   ctx.restore();
 }
 
-// One frame of a sheet, feet at (cx, feet); face = 1 (right) or -1 (left). The yellow body is
-// recoloured with the equipped colour, the accessories are drawn on his head and the equipped
-// shop weapon in his hand.
-function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, color = look.equipped.color, accs = look.equipped.acc, weapon = heldWeapon()) {
+// One frame of a sheet, feet at (cx, feet); face = 1 (right) or -1 (left). lk = what he wears
+// (look.equipped by default): the yellow body is recoloured, outlined with the glow, back items
+// hang behind him, accessories and the hat go on his head and the shop weapon in his hand.
+function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, lk = look.equipped, weapon = heldWeapon()) {
   const held = weapon && ready(HOLD_SHEETS[sheet]) ? weapon : null;
   const img = held ? HOLD_SHEETS[sheet] : SHEETS[sheet];
   if (!ready(img)) return;
@@ -3170,7 +3819,11 @@ function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, color = look
   if (rot) ctx.rotate(rot * face);
   ctx.scale(face * sc, sc);
   ctx.translate(-FRAME_W / 2, -FRAME_H);   // from here on, units are sprite pixels
-  const f = colorFilter(color);
+  const t = performance.now() / 1000, head = (HERO_HEADS[sheet] || [])[frame];
+  if (head && lk.back && lk.back !== "none") drawBack(lk.back, head[0], head[1], sheet, t);
+  const glow = GLOWS[lk.glow];
+  if (glow && glow.color) drawGlow(img, (held ? "h" : "") + sheet, frame, glow, t);
+  const f = colorFilter(lk.color);
   if (f) ctx.filter = f;
   ctx.drawImage(img, frame * FRAME_W, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
   ctx.filter = "none";
@@ -3178,7 +3831,10 @@ function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, color = look
     const trail = tintedTrail(sheet, trailColor(held));
     if (trail) ctx.drawImage(trail, frame * FRAME_W, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
   }
-  if (accs.length) drawAccessories(accs, sheet, frame);
+  if (head) {
+    for (const id of lk.acc || []) drawAccessory(id, head[0], head[1]);
+    if (lk.hat && lk.hat !== "none") drawHat(lk.hat, head[0], head[1], t);
+  }
   if (held) drawHeldWeapon(held, sheet, frame);
   ctx.restore();
 }
@@ -3220,10 +3876,13 @@ function drawStickman() {
     return;
   }
   drawSkinSlash(cx, feet);
+  const orbs = AURAS[look.equipped.aura].orbs, t = performance.now() / 1000;
+  if (orbs) drawOrbs(cx, feet - 32, orbs, t, false);
   ctx.save();
   if (player.hurt > 0 && state === "running") ctx.globalAlpha = 0.65;
   drawSprite(fr.sheet, fr.frame, cx, feet, player.facing, fr.rot || 0);
   ctx.restore();
+  if (orbs) drawOrbs(cx, feet - 32, orbs, t, true);
 }
 
 // Arrows, bombs, blasts and ground shockwaves
@@ -3471,6 +4130,7 @@ function draw() {
     const sz = Math.max(PX, snap(p.r));
     ctx.fillRect(snap(p.x - sz / 2), snap(p.y - sz / 2), sz, sz);
   }
+  for (const p of fxParts) drawFxPart(p, p.t);
   ctx.globalAlpha = 1;
   drawStickman();
   drawImpacts();
@@ -3481,6 +4141,8 @@ function draw() {
     const life = p.life || 0.8;
     ctx.globalAlpha = Math.min(1, (life - p.t) / 0.3);
     if (p.gold) drawGoldPopup(p);
+    else if (p.dmg) drawDmgText(look.equipped.dmg, p.text, p.x, p.y, p.t, p.hue);
+    else if (p.unlock) drawDmgText("gold", p.text, p.x, p.y + p.t * 40, 1, 0);
     else {
       ctx.fillStyle = colors.ink;
       ctx.font = "bold 16px 'Courier New', monospace";
