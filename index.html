@@ -26,19 +26,28 @@
     background: var(--sky);
     image-rendering: pixelated;
   }
-  /* Touch controls: dark glass buttons with a light rim so they read on the day and night sky.
-     --b is the big button size, --sm the skill button size; both follow the BUTTON SIZE setting. */
-  :root { --b: max(var(--btn-size), 64px); --sm: max(calc(var(--btn-size) * 0.66), 50px); --rim: rgba(255, 255, 255, 0.85); --glass: rgba(24, 26, 34, 0.5); }
+  /* Touch controls, laid out like a MOBA: a joystick under the left thumb, and under the right thumb a big
+     basic-attack button in the corner with the skills curving around it and jump / dash on the outside.
+     --b follows the BUTTON SIZE setting; every other size is a multiple of it. */
+  :root {
+    --b: max(var(--btn-size), 64px);
+    --atk: calc(var(--b) * 1.35);   /* basic attack */
+    --sk: calc(var(--b) * 0.8);     /* skills 1 - 3 */
+    --sp: calc(var(--b) * 0.58);    /* jump and dash */
+    --gap: calc(var(--b) * 0.09);
+    --knob-x: 0px;
+    --knob-y: 0px;
+  }
   .btn {
-    position: fixed;
-    bottom: 4vh;
-    width: var(--b);
-    height: var(--b);
+    position: absolute;
     box-sizing: border-box;
     border-radius: 50%;
-    border: 3px solid var(--rim);
-    background: var(--glass);
-    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35), inset 0 0 0 2px rgba(0, 0, 0, 0.25);
+    /* Dark blue glass inside a polished steel rim */
+    border: 3px solid transparent;
+    background:
+      radial-gradient(circle at 50% 30%, rgba(80, 120, 180, 0.55), rgba(12, 20, 38, 0.78) 72%) padding-box,
+      linear-gradient(160deg, #f2f7ff, #8fb0dc 35%, #2b4370 70%, #a9c4ec) border-box;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45), inset 0 0 10px rgba(140, 190, 255, 0.25);
     color: #fff;
     text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
     font: bold 16px "Courier New", monospace;
@@ -49,45 +58,98 @@
     -webkit-touch-callout: none;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
-    transition: transform 0.06s, background 0.06s;
+    transition: transform 0.08s ease-out, filter 0.08s;
   }
-  .btn svg { width: 52%; height: 52%; fill: #fff; stroke: none; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.55)); pointer-events: none; }
-  .btn.pressed { background: rgba(255, 255, 255, 0.35); transform: scale(0.93); }
-  /* Left thumb: one joined walk pad. Right thumb: attack (biggest) and jump side by side */
-  #leftBtn, #rightBtn { bottom: 7vh; width: calc(var(--b) * 1.05); font-size: 28px; }
-  #leftBtn { left: 3vw; border-radius: 999px 0 0 999px; }
-  #rightBtn { left: calc(3vw + var(--b) * 1.05 - 3px); border-radius: 0 999px 999px 0; }
-  #jumpBtn { right: 3vw; bottom: 7vh; font-size: 22px; }
-  #attackBtn {
-    right: calc(3vw + var(--b) + 2vw);
-    width: calc(var(--b) * 1.2);
-    height: calc(var(--b) * 1.2);
-    bottom: 6vh;
-    border-color: #ff9a3a;
-    font-size: 15px;
+  .btn svg { width: 50%; height: 50%; fill: #fff; stroke: none; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.55)); pointer-events: none; }
+  /* Pressing: the button sinks a little and lights up, and a ring of light ripples out from its rim */
+  .btn.pressed { transform: scale(0.9); filter: brightness(1.3); }
+  .btn::before {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    border: 3px solid rgba(160, 215, 255, 0.95);
+    opacity: 0;
+    pointer-events: none;
   }
-  #attackBtn svg { width: 56%; height: 56%; }
-  /* Dash and skills 1-3: a row of smaller buttons above attack and jump, right edges lined up */
-  #skillRow {
+  @keyframes tap-ring { 0% { opacity: 0.95; transform: scale(1); } 100% { opacity: 0; transform: scale(1.35); } }
+  .btn.tap::before { animation: tap-ring 0.32s ease-out; }
+
+  #pad { position: fixed; right: 3vw; bottom: 4vh; width: var(--atk); height: var(--atk); }
+  #attackBtn { left: 0; top: 0; width: var(--atk); height: var(--atk); }
+  #attackBtn svg { width: 54%; height: 54%; }
+  /* Each button around attack sits at an angle (--c = cos, --s = sin) and a distance (--r) from its centre */
+  #pad .skill, #pad .spell {
+    --size: var(--sk);
+    --r: calc(var(--atk) / 2 + var(--size) / 2 + var(--gap));
+    width: var(--size);
+    height: var(--size);
+    left: calc(50% + var(--r) * var(--c) - var(--size) / 2);
+    top: calc(50% - var(--r) * var(--s) - var(--size) / 2);
+    font-size: 20px;
+  }
+  #pad .spell {
+    --size: var(--sp);
+    --r: calc(var(--atk) / 2 + var(--sk) + var(--sp) / 2 + var(--gap) * 2);
+  }
+  #sk1Btn { --c: -0.99; --s: -0.14; }   /* 188 deg: low on the left */
+  #sk2Btn { --c: -0.77; --s: 0.64; }    /* 140 deg: up and left */
+  #sk3Btn { --c: -0.03; --s: 1; }       /* 92 deg: straight above */
+  #jumpBtn { --c: -0.98; --s: -0.17; }  /* outer ring, low */
+  #dashBtn { --c: -0.93; --s: 0.37; }   /* outer ring, higher */
+  #pad .skill, #pad .spell { background:
+      radial-gradient(circle at 50% 30%, rgba(80, 120, 180, 0.55), rgba(12, 20, 38, 0.78) 72%) padding-box,
+      linear-gradient(160deg, #e6f3ff, #5aa2ff 40%, #173a78 75%, #8cc4ff) border-box; }
+  #sk3Btn { background:
+      radial-gradient(circle at 50% 30%, rgba(140, 110, 60, 0.55), rgba(30, 20, 10, 0.8) 72%) padding-box,
+      linear-gradient(160deg, #fff4c8, #f0b93a 40%, #7a4d0c 75%, #ffd76a) border-box; }
+  #sk3Btn::before { border-color: rgba(255, 220, 120, 0.95); }
+
+  /* The joystick: a ring with faint arrows; the knob follows the thumb and springs back when it lifts */
+  #stick {
     position: fixed;
-    right: 3vw;
-    bottom: calc(6vh + var(--b) * 1.2 + 3.5vh);
-    display: flex;
-    gap: 1.4vw;
+    left: 4vw;
+    bottom: 4vh;
+    width: calc(var(--b) * 1.6);
+    height: calc(var(--b) * 1.6);
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 3px solid rgba(170, 200, 240, 0.55);
+    background: radial-gradient(circle, rgba(40, 60, 95, 0.25), rgba(12, 20, 38, 0.5) 70%);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35), inset 0 0 14px rgba(140, 190, 255, 0.2);
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
   }
-  .btn.small {
-    position: relative;
-    bottom: auto;
-    width: var(--sm);
-    height: var(--sm);
-    min-width: 50px;
-    min-height: 50px;
-    font-size: 22px;
-    overflow: visible;
+  #stick .arrow {
+    position: absolute;
+    width: 0;
+    height: 0;
+    border: 9px solid transparent;
+    opacity: 0.6;
+    pointer-events: none;
   }
-  #dashBtn { border-color: #4aa8ff; }
-  #sk1Btn, #sk2Btn { border-color: #ffd34d; }
-  #sk3Btn { border-color: #ff7a2a; }
+  #stick .arrow.l { left: 7%; top: 50%; margin-top: -9px; border-right: 12px solid #dce8ff; border-left: 0; }
+  #stick .arrow.r { right: 7%; top: 50%; margin-top: -9px; border-left: 12px solid #dce8ff; border-right: 0; }
+  #stick .arrow.u { top: 7%; left: 50%; margin-left: -9px; border-bottom: 12px solid #dce8ff; border-top: 0; }
+  #knob {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 46%;
+    height: 46%;
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 3px solid transparent;
+    background:
+      radial-gradient(circle at 50% 35%, rgba(150, 185, 235, 0.9), rgba(40, 65, 110, 0.9) 75%) padding-box,
+      linear-gradient(160deg, #f2f7ff, #8fb0dc 40%, #2b4370) border-box;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+    transform: translate(calc(-50% + var(--knob-x)), calc(-50% + var(--knob-y)));
+    transition: transform 0.12s ease-out;
+    pointer-events: none;
+  }
+  #stick.active #knob { transition: none; }
+  #stick.active { border-color: rgba(190, 220, 255, 0.85); }
   /* The cooldown clock: the unfinished part is shaded and is eaten away clockwise, with the seconds
      left in the middle. --cd runs from 1 (just used) down to 0 (ready). */
   .btn .cd {
@@ -110,13 +172,13 @@
   }
   .btn.cooling .cd { display: block; }
   .btn.cooling .cdn { display: flex; }
-  .btn.cooling { border-color: rgba(255, 255, 255, 0.45); }
+  .btn.cooling { filter: saturate(0.4); }
   .btn .glyph { width: 64%; height: 64%; image-rendering: pixelated; pointer-events: none; }
   .btn.cooling > .glyph { opacity: 0.35; }
   @keyframes ready-pop { 0% { transform: scale(1.18); box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.7); } 100% { transform: scale(1); } }
   .btn.ready { animation: ready-pop 0.35s ease-out; }
   /* A small caption under a button says what it does; it fades out a few seconds into the run */
-  .btn[data-cap]::after {
+  .btn[data-cap]::after, #stick[data-cap]::after {
     content: attr(data-cap);
     position: absolute;
     top: calc(100% + 4px);
@@ -131,7 +193,7 @@
     transition: opacity 2s;
     pointer-events: none;
   }
-  body.show-hint .btn[data-cap]::after { opacity: 1; transition: opacity 0.2s; }
+  body.show-hint .btn[data-cap]::after, body.show-hint #stick[data-cap]::after { opacity: 1; transition: opacity 0.2s; }
   /* Computers get the same hint as one line of keys along the bottom */
   #keyHint {
     position: fixed;
@@ -149,13 +211,13 @@
   body.playing #keyHint { opacity: 0.5; }   /* stays as a quiet reminder under the game */
   body.show-hint #keyHint { opacity: 0.9; transition: opacity 0.2s; }
   @media (hover: none), (pointer: coarse) { #keyHint { display: none; } }
-  body:not(.playing) #skillRow { display: none; }
-  /* Hide the buttons on computers with a mouse; keyboard is used there */
+  /* Hide the touch controls on computers with a mouse; keyboard is used there */
   @media (hover: hover) and (pointer: fine) {
-    .btn { display: none; }
+    #pad, #stick { display: none; }
   }
-  /* Walk / attack / pause only show while playing */
-  body:not(.playing) .btn,
+  /* Controls and pause only show while playing */
+  body:not(.playing) #pad,
+  body:not(.playing) #stick,
   body:not(.playing) #pauseBtn { display: none; }
 
   #pauseBtn {
@@ -400,15 +462,14 @@
 </head>
 <body>
 <canvas id="game" width="900" height="300"></canvas>
-<div class="btn" id="leftBtn" data-cap="WALK">&#9664;</div>
-<div class="btn" id="rightBtn" data-cap="WALK">&#9654;</div>
-<div class="btn" id="jumpBtn" data-cap="JUMP">&#9650;</div>
-<div class="btn" id="attackBtn" data-cap="COMBO"><svg viewBox="0 0 16 16" shape-rendering="crispEdges"><path d="M13 1h2v2h-1v1h-1v1h-1v1h-1v1h-1v1H9v1H8v1H7v1H6v1H5v1H4V9h1V8h1V7h1V6h1V5h1V4h1V3h1V2h1z"/><path d="M3 10h3v1H5v1H4v3H3v-1H2v-1h1z"/><path d="M2 13h1v1H2z"/></svg></div>
-<div id="skillRow">
-  <div class="btn small" id="dashBtn" data-cap="DASH"><img class="glyph" src="pictures/icons/dash.png" alt=""><i class="cd"></i><b class="cdn"></b></div>
-  <div class="btn small" id="sk1Btn" data-cap="SLAM"><img class="glyph" src="pictures/icons/slam.png" alt=""><i class="cd"></i><b class="cdn"></b></div>
-  <div class="btn small" id="sk2Btn" data-cap="SPIN"><img class="glyph" src="pictures/icons/spin.png" alt=""><i class="cd"></i><b class="cdn"></b></div>
-  <div class="btn small" id="sk3Btn" data-cap="ULTIMATE"><img class="glyph" src="pictures/icons/ultimate.png" alt=""><i class="cd"></i><b class="cdn"></b></div>
+<div id="stick" data-cap="MOVE"><i class="arrow l"></i><i class="arrow r"></i><i class="arrow u"></i><div id="knob"></div></div>
+<div id="pad">
+  <div class="btn" id="attackBtn" data-cap="COMBO"><svg viewBox="0 0 16 16" shape-rendering="crispEdges"><path d="M13 1h2v2h-1v1h-1v1h-1v1h-1v1h-1v1H9v1H8v1H7v1H6v1H5v1H4V9h1V8h1V7h1V6h1V5h1V4h1V3h1V2h1z"/><path d="M3 10h3v1H5v1H4v3H3v-1H2v-1h1z"/><path d="M2 13h1v1H2z"/></svg></div>
+  <div class="btn skill" id="sk1Btn" data-cap="SLAM"><img class="glyph" src="pictures/icons/slam.png" alt=""><i class="cd"></i><b class="cdn"></b></div>
+  <div class="btn skill" id="sk2Btn" data-cap="SPIN"><img class="glyph" src="pictures/icons/spin.png" alt=""><i class="cd"></i><b class="cdn"></b></div>
+  <div class="btn skill" id="sk3Btn" data-cap="ULTIMATE"><img class="glyph" src="pictures/icons/ultimate.png" alt=""><i class="cd"></i><b class="cdn"></b></div>
+  <div class="btn spell" id="jumpBtn" data-cap="JUMP"><svg viewBox="0 0 16 16" shape-rendering="crispEdges"><path d="M7 2h2v1h1v1h1v1h1v1h1v2H10v6H6V8H3V6h1V5h1V4h1V3h1z"/></svg></div>
+  <div class="btn spell" id="dashBtn" data-cap="DASH"><img class="glyph" src="pictures/icons/dash.png" alt=""><i class="cd"></i><b class="cdn"></b></div>
 </div>
 <div id="keyHint">A / D  WALK &nbsp;&middot;&nbsp; W  JUMP &nbsp;&middot;&nbsp; SPACE  ATTACK x3 &nbsp;&middot;&nbsp; SHIFT  DASH &nbsp;&middot;&nbsp; 1 2 3  SKILLS</div>
 <div id="pauseBtn" aria-label="Pause"><span></span><span></span></div>
@@ -2041,7 +2102,7 @@ const sfx = {
 // --- Input ---
 // Computer: A / D (or the arrow keys) walk, W jumps, SPACE / X / F / J attack (press again to chain
 // the 3-hit combo), SHIFT or K dashes, 1 / 2 / 3 (or U / I / O) use skills 1, 2 and 3.
-// Phone: the left and right arrow buttons walk, and the buttons on the right do the rest.
+// Phone: the joystick on the left walks (flick it up to jump), and the buttons on the right do the rest.
 const held = { left: false, right: false };        // keyboard
 const touchHeld = { left: false, right: false };   // on-screen buttons
 const MOVE_KEYS = { KeyA: "left", ArrowLeft: "left", KeyD: "right", ArrowRight: "right" };
@@ -2051,8 +2112,7 @@ const DASH_KEYS = ["ShiftLeft", "ShiftRight", "KeyK", "KeyL"];
 const SKILL_KEYS = { Digit1: "s1", Numpad1: "s1", KeyU: "s1", Digit2: "s2", Numpad2: "s2", KeyI: "s2",
                      Digit3: "s3", Numpad3: "s3", KeyO: "s3" };
 
-const leftBtn = document.getElementById("leftBtn");
-const rightBtn = document.getElementById("rightBtn");
+const stick = document.getElementById("stick");
 const attackBtn = document.getElementById("attackBtn");
 const jumpBtn = document.getElementById("jumpBtn");
 const dashBtn = document.getElementById("dashBtn");
@@ -2063,7 +2123,8 @@ const pauseBtn = document.getElementById("pauseBtn");
 
 function releaseInput() {
   held.left = held.right = touchHeld.left = touchHeld.right = false;
-  for (const b of [leftBtn, rightBtn, attackBtn, jumpBtn, dashBtn, sk1Btn, sk2Btn, sk3Btn]) b.classList.remove("pressed");
+  for (const b of [attackBtn, jumpBtn, dashBtn, sk1Btn, sk2Btn, sk3Btn]) b.classList.remove("pressed");
+  releaseStick();
 }
 
 // Presses are remembered for a moment (see update), so tapping just early still counts
@@ -2124,31 +2185,54 @@ pauseBtn.addEventListener("pointerdown", (e) => {
   pauseGame();
 });
 
-// A walk button stays "held" until the finger lifts, even if it slides off the button
-function holdButton(btn, dir) {
-  btn.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    btn.setPointerCapture(e.pointerId);
-    btn.classList.add("pressed");
-    touchHeld[dir] = true;
-  });
-  for (const ev of ["pointerup", "pointercancel"]) {
-    btn.addEventListener(ev, () => {
-      btn.classList.remove("pressed");
-      touchHeld[dir] = false;
-    });
-  }
+// The joystick: only the sideways part walks; pushing it up past halfway jumps once per push.
+// It keeps tracking the finger until it lifts, even outside the ring.
+let stickId = null, stickUp = false;
+function moveStick(e) {
+  const r = stick.getBoundingClientRect();
+  const max = r.width / 2;
+  let dx = e.clientX - (r.left + max), dy = e.clientY - (r.top + max);
+  const d = Math.hypot(dx, dy);
+  if (d > max) { dx *= max / d; dy *= max / d; }
+  stick.style.setProperty("--knob-x", dx + "px");
+  stick.style.setProperty("--knob-y", dy + "px");
+  touchHeld.left = dx < -max * 0.25;
+  touchHeld.right = dx > max * 0.25;
+  const up = dy < -max * 0.55;
+  if (up && !stickUp) press("jump");
+  stickUp = up;
 }
-holdButton(leftBtn, "left");
-holdButton(rightBtn, "right");
+function releaseStick() {
+  stickId = null;
+  stickUp = false;
+  touchHeld.left = touchHeld.right = false;
+  stick.classList.remove("active");
+  stick.style.setProperty("--knob-x", "0px");
+  stick.style.setProperty("--knob-y", "0px");
+}
+stick.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  stick.setPointerCapture(e.pointerId);
+  stickId = e.pointerId;
+  stick.classList.add("active");
+  moveStick(e);
+});
+stick.addEventListener("pointermove", (e) => { if (e.pointerId === stickId) moveStick(e); });
+for (const ev of ["pointerup", "pointercancel"]) {
+  stick.addEventListener(ev, (e) => { if (e.pointerId === stickId) releaseStick(); });
+}
 
 for (const [btn, action] of [[attackBtn, () => press("attack")], [jumpBtn, () => press("jump")], [dashBtn, dash],
     [sk1Btn, () => press("s1")], [sk2Btn, () => press("s2")], [sk3Btn, () => press("s3")]]) {
   btn.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     btn.classList.add("pressed");
+    btn.classList.remove("tap");
+    void btn.offsetWidth;   // restart the ripple even on a fast second tap
+    btn.classList.add("tap");
     action();
   });
+  btn.addEventListener("animationend", (e) => { if (e.animationName === "tap-ring") btn.classList.remove("tap"); });
   for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
     btn.addEventListener(ev, () => btn.classList.remove("pressed"));
   }
