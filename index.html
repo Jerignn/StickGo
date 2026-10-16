@@ -4905,6 +4905,19 @@ for (const name of Object.keys(SHEET_FRAMES)) {
   TRAIL_SHEETS[name] = loadImg(`pictures/hold/trail_${name}.png`);
 }
 for (const id of Object.keys(HOLD.weapons)) HELD_IMGS[id] = loadImg(`pictures/hold/w_${id}.png`);
+// Spears, axes and daggers have bodies of their own for their stance and basic attacks
+// (tools/make_weapon_moves.py); HOLD.types.<type>.<sheet> has, per frame, the grip, weapon angle and
+// slide, his head and how strong the swing's trail is.
+const TYPE_SHEETS = {};
+for (const [type, sheets] of Object.entries(HOLD.types || {})) {
+  TYPE_SHEETS[type] = {};
+  for (const sheet of Object.keys(sheets)) TYPE_SHEETS[type][sheet] = loadImg(`pictures/hold/${type}_${sheet}.png`);
+}
+// The weapon type's own frames for this sheet, if it has them and they have loaded
+function ownMoves(skin, sheet) {
+  const t = skin && skin.type, moves = t && HOLD.types && HOLD.types[t] && HOLD.types[t][sheet];
+  return moves && ready(TYPE_SHEETS[t][sheet]) ? moves : null;
+}
 const ready = (img) => img.complete && img.naturalWidth;
 
 // The equipped shop weapon, or null for the starter scythe that is already in his sprites
@@ -4967,7 +4980,7 @@ function heldPose(skin, sheet, frame, grip) {
       const from = n === 1 ? -0.4 : -2.2, to = n === 1 ? -3.6 : n === 2 ? 1.25 : 0.95;
       const ang = p < 0.3 ? from - 0.3 * Math.sign(to - from) * (p / 0.3)
         : from - 0.3 * Math.sign(to - from) + (to - from + 0.3 * Math.sign(to - from)) * easeOut((p - 0.3) / 0.35);
-      return { ang, slide: style.slide || 0, motion: "chop", p, dir: Math.sign(to - from) };
+      return { ang, slide: style.slide || 0, motion: "chop", p, dir: Math.sign(to - from), out: p < 0.3 ? 0 : 1 - Math.max(0, p - 0.65) / 0.35 };
     }
     const out = Math.abs(Math.sin(p * Math.PI * (n === 2 ? 1 : 2)));   // stab: quick jabs, two per swing
     return { ang: n === 2 ? -0.3 : n === 1 ? 0.3 : 0.05, slide: -6 + out * 12, motion: "stab", p, out };
@@ -4976,14 +4989,22 @@ function heldPose(skin, sheet, frame, grip) {
   return { ang: grip[2], slide: 0 };
 }
 
+// The pose from a weapon type's own frames: angle and slide as drawn, the trail as strong as the frame says
+function movesPose(skin, sheet, frame, moves) {
+  const g = moves[frame], next = moves[frame + 1] || moves[frame - 1] || g;
+  const turn = (moves[frame + 1] ? next[2] - g[2] : g[2] - next[2]) || 1;
+  const swing = ATTACK_SHEETS[sheet] !== undefined ? HOLD_STYLES[skin.type].swing : null;
+  return { ang: g[2], slide: g[3], motion: swing && g[6] > 0 ? swing : null, p: (frame + 0.5) / moves.length, out: g[6], dir: Math.sign(turn) };
+}
+
 // What his own-way swings leave behind: an arc behind a chopping blade, streaks behind a jab
 function drawMotionTrail(pose, ang, gx, gy, color) {
   ctx.save();
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
   if (pose.motion === "chop") {
-    if (pose.p < 0.3) { ctx.restore(); return; }   // nothing while it is raised
-    ctx.globalAlpha = 0.6 * (1 - Math.max(0, pose.p - 0.65) / 0.35);
+    if (pose.out < 0.05) { ctx.restore(); return; }   // nothing while it is raised
+    ctx.globalAlpha = 0.6 * pose.out;
     ctx.lineWidth = 4;
     const sweep = 1.5 * pose.dir;
     ctx.beginPath();
@@ -5011,13 +5032,13 @@ function drawMotionTrail(pose, ang, gx, gy, color) {
   ctx.restore();
 }
 let heldBlade = HELD_BLADE;   // the held weapon's own blade length (hold-data's blade; the swords use HELD_BLADE)
-function drawHeldWeapon(skin, sheet, frame) {
-  const grip = (HOLD.hero[sheet] || [])[frame];
+function drawHeldWeapon(skin, sheet, frame, moves = null) {
+  const grip = moves ? moves[frame] : (HOLD.hero[sheet] || [])[frame];
   if (!grip) return;
   const w = HOLD.weapons[skin.img], t = performance.now() / 1000;
   const fx = skin.slash ? WEAPON_FX[skin.slash] : null, legend = skin.rarity === "legendary";
   const speed = SWAY_SHEETS[sheet];
-  const pose = heldPose(skin, sheet, frame, grip);
+  const pose = moves ? movesPose(skin, sheet, frame, moves) : heldPose(skin, sheet, frame, grip);
   const ang = pose.ang + (speed ? Math.sin(t * speed) * (sheet === "run" ? 0.09 : 0.07) : 0);
   // Like on their shop card, rare and legendary ones float: a slow bob while he isn't swinging
   const bob = fx && speed ? Math.round(Math.sin(t * 3)) : 0;
@@ -5142,7 +5163,8 @@ function drawWeaponAura(slash, fx, along, t, legend) {
 // hang behind him, accessories and the hat go on his head and the shop weapon in his hand.
 function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, lk = look.equipped, weapon = heldWeapon()) {
   const held = weapon && ready(HOLD_SHEETS[sheet]) ? weapon : null;
-  const img = held ? HOLD_SHEETS[sheet] : SHEETS[sheet];
+  const moves = ownMoves(held, sheet);
+  const img = moves ? TYPE_SHEETS[held.type][sheet] : held ? HOLD_SHEETS[sheet] : SHEETS[sheet];
   if (!ready(img)) return;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -5150,15 +5172,15 @@ function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, lk = look.eq
   if (rot) ctx.rotate(rot * face);
   ctx.scale(face * sc, sc);
   ctx.translate(-FRAME_W / 2, -FRAME_H);   // from here on, units are sprite pixels
-  const t = performance.now() / 1000, head = (HERO_HEADS[sheet] || [])[frame];
+  const t = performance.now() / 1000, head = moves ? moves[frame].slice(4, 6) : (HERO_HEADS[sheet] || [])[frame];
   if (head && lk.back && lk.back !== "none") drawBack(lk.back, head[0], head[1], sheet, t);
   const glow = GLOWS[lk.glow];
-  if (glow && glow.color) drawGlow(img, (held ? "h" : "") + sheet, frame, glow, t);
+  if (glow && glow.color) drawGlow(img, (moves ? held.type : held ? "h" : "") + sheet, frame, glow, t);
   const f = colorFilter(lk.color);
   if (f) ctx.filter = f;
   ctx.drawImage(img, frame * FRAME_W, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
   ctx.filter = "none";
-  if (held && !swingsOwnWay(held, sheet)) {
+  if (held && !moves && !swingsOwnWay(held, sheet)) {
     const trail = tintedTrail(sheet, trailColor(held));
     if (trail) ctx.drawImage(trail, frame * FRAME_W, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
   }
@@ -5166,7 +5188,7 @@ function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, lk = look.eq
     for (const id of lk.acc || []) drawAccessory(id, head[0], head[1]);
     if (lk.hat && lk.hat !== "none") drawHat(lk.hat, head[0], head[1], t);
   }
-  if (held) drawHeldWeapon(held, sheet, frame);
+  if (held) drawHeldWeapon(held, sheet, frame, moves);
   ctx.restore();
 }
 

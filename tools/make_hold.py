@@ -8,7 +8,8 @@ For every shop weapon (pictures/weapons/<id>.png) it keeps only the weapon itsel
   pictures/hold/w_<id>.png
 and it writes hold-data.js with the grip and angle of every frame and every weapon.
 The spears, axes, daggers and scythes are drawn by tools/make_new_weapons.py, which writes their own
-held pictures: run it again after this script so their entries are back in hold-data.js.
+held pictures, and tools/make_weapon_moves.py draws their bodies: run both again after this script so
+their entries are back in hold-data.js.
 Usage: python tools/make_hold.py [debug.png]"""
 import json, math, os, sys
 from PIL import Image, ImageDraw
