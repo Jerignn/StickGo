@@ -579,6 +579,143 @@
   .store-menu .card button.cant,
   .store-menu .card button.owned { opacity: 0.55; }
 
+  /* Skill tree: a dark teal console; tiles light up white when learned and green when aced */
+  #treeMenu { --tree: #5fe08a; --node: min(48px, 11.5vh); }
+  .tree-body { flex-direction: row; align-items: stretch; justify-content: center; gap: 14px; }
+  .tree-left { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+  .tree-panel {
+    flex: 1;
+    min-height: 0;
+    width: min(380px, 52vw);
+    box-sizing: border-box;
+    padding: 6px 10px 8px;
+    border: 2px solid #2f5f5a;
+    background: linear-gradient(rgba(12, 44, 42, 0.92), rgba(6, 22, 24, 0.94));
+    box-shadow: 4px 4px 0 #000, inset 0 0 30px rgba(60, 200, 160, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .tree-head { display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+  .tree-head b { color: #e8fff6; font: bold 15px "Courier New", monospace; letter-spacing: 4px; text-shadow: 0 0 8px var(--tree); }
+  .tree-head span { color: #8fc9bc; font: bold 10px "Courier New", monospace; letter-spacing: 2px; }
+  .tree-grid { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: space-around; }
+  .trow { display: flex; align-items: center; border-top: 1px solid rgba(120, 200, 180, 0.15); padding-top: 3px; }
+  .trow:first-child { border-top: 0; }
+  .tlabel { width: 52px; flex: none; color: #8fc9bc; font: bold 9px "Courier New", monospace; letter-spacing: 1px; text-align: center; }
+  .trow.locked .tlabel { color: #5a7a74; }
+  .tnodes { flex: 1; display: flex; justify-content: center; gap: 34px; }
+  .store-menu .tnode {
+    position: relative;
+    width: var(--node);
+    height: var(--node);
+    min-width: 0;
+    padding: 0;
+    border: 2px solid #4a6a66;
+    background: rgba(20, 32, 34, 0.95);
+    box-shadow: 2px 2px 0 #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .store-menu .tnode:active { transform: translate(1px, 1px); }
+  .store-menu .tnode.learned { border-color: #f0fff8; background: rgba(40, 60, 60, 0.95); }
+  .store-menu .tnode.aced { border-color: #5fe0a0; box-shadow: 2px 2px 0 #000, 0 0 10px rgba(95, 224, 160, 0.8), inset 0 0 10px rgba(95, 224, 160, 0.4); }
+  .store-menu .tnode.sel { outline: 2px solid var(--tree); outline-offset: 3px; }
+  .trow.locked .tnode { opacity: 0.45; }
+  .ticon {
+    display: block;
+    width: 32px;
+    height: 32px;
+    background: url("pictures/icons/tree.png") calc(var(--i) * -32px) 0 / auto 32px no-repeat;
+    image-rendering: pixelated;
+    transform: scale(1.15);
+    opacity: 0.55;
+  }
+  .tnode.learned .ticon { opacity: 1; }
+  .ticon.big { transform: scale(1.5); opacity: 1; margin: 8px; flex: none; }
+  .tlvl {
+    position: absolute;
+    right: -6px;
+    bottom: -6px;
+    min-width: 14px;
+    padding: 0 2px;
+    border: 1px solid #f0fff8;
+    background: #1a2a2c;
+    color: #fff;
+    font: bold 10px "Courier New", monospace;
+    line-height: 13px;
+  }
+  .tace {
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0 3px;
+    background: #5fe0a0;
+    color: #062018;
+    font: bold 8px "Courier New", monospace;
+    letter-spacing: 1px;
+    line-height: 11px;
+  }
+  .tlock {   /* a pixel padlock */
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 8px;
+    height: 6px;
+    background: #9ab;
+    box-shadow: 0 0 0 1px #000;
+  }
+  .tlock::before { content: ""; position: absolute; left: 1px; top: -5px; width: 4px; height: 4px; border: 1px solid #9ab; border-bottom: 0; }
+  .tree-info {
+    width: min(270px, 34vw);
+    box-sizing: border-box;
+    padding: 8px 12px;
+    border: 2px solid #2f5f5a;
+    background: rgba(6, 22, 24, 0.94);
+    box-shadow: 4px 4px 0 #000;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+  }
+  .tree-info .xp { display: flex; align-items: center; gap: 6px; color: #8fc9bc; font: bold 10px "Courier New", monospace; }
+  .tree-info .xp i { flex: 1; height: 8px; border: 1px solid #4a6a66; background: #0a1414; }
+  .tree-info .xp i b { display: block; height: 100%; background: #5fe0a0; }
+  .ihead { display: flex; align-items: center; gap: 6px; }
+  .ihead b { display: block; color: #fff; font: bold 15px "Courier New", monospace; letter-spacing: 1px; }
+  .ihead small { color: #8fc9bc; font: bold 10px "Courier New", monospace; letter-spacing: 1px; }
+  .tree-info p { margin: 0; color: #7f9a96; font: bold 11px "Courier New", monospace; line-height: 1.3; text-shadow: none; }
+  .tree-info p.on { color: #e8fff6; }
+  .tree-info em { font-style: normal; display: inline-block; margin-right: 6px; padding: 0 4px; background: #4a6a66; color: #fff; font-size: 9px; letter-spacing: 1px; }
+  .tree-info em.ace { background: #2a7a56; }
+  .store-menu .tree-info button { min-width: 0; width: 100%; padding: 7px 6px; font-size: 13px; }
+  .store-menu .tree-info button.primary { background: #2a7a56; border-color: #5fe0a0; }
+  .store-menu .tree-info button:disabled { opacity: 0.5; }
+  .store-menu .tree-info .small-btn { font-size: 11px; padding: 5px 6px; margin-top: auto; }
+  /* the SKILLS button on the main menu shows how many points are waiting */
+  #mainMenu button { position: relative; }
+  #treeBadge {
+    position: absolute;
+    top: -9px;
+    right: -9px;
+    min-width: 20px;
+    padding: 1px 4px;
+    box-sizing: border-box;
+    background: #5fe0a0;
+    color: #062018;
+    font: bold 12px "Courier New", monospace;
+    letter-spacing: 0;
+    text-shadow: none;
+    box-shadow: 2px 2px 0 #000;
+  }
+  /* Game over: the XP the run earned */
+  .over-xp { display: flex; align-items: center; gap: 8px; width: 100%; color: #c9a0b0; font: bold 11px "Courier New", monospace; }
+  .over-xp i { flex: 1; height: 9px; border: 1px solid #5a2a3a; background: #0a0408; }
+  .over-xp i b { display: block; height: 100%; width: 0; background: #5fe0a0; transition: width 0.9s ease-out; }
+  .over-level { display: none; color: #5fe0a0; font: bold 13px "Courier New", monospace; letter-spacing: 2px; text-shadow: 0 0 8px rgba(95, 224, 160, 0.7); }
+  .over-level.show { display: block; }
   /* Settings and pause: the same pixel buttons as the main menu */
   #settingsMenu h1, #pauseMenu h1 { color: #fff; text-shadow: 3px 3px 0 #000; }
   #pauseMenu { background: rgba(8, 6, 16, 0.78); }
@@ -659,7 +796,10 @@
     <button data-action="shop">SHOP</button>
     <button data-action="inventory">INVENTORY</button>
   </div>
-  <button data-action="look">CUSTOMIZE</button>
+  <div class="menu-pair">
+    <button data-action="look">CUSTOMIZE</button>
+    <button data-action="tree">SKILLS<b id="treeBadge"></b></button>
+  </div>
   <button data-action="settings">SETTINGS</button>
   <div class="menu-stats">
     <div class="stat stat-gold"><span class="coin"></span><span class="stat-value" id="goldText"></span></div>
@@ -706,6 +846,21 @@
   <p class="store-msg" id="lookMsg"></p>
 </div>
 
+<div class="menu store-menu" id="treeMenu">
+  <div class="store-top"><button class="back-btn" data-action="treeBack">BACK</button><h1>SKILLS</h1><span class="gold-chip" id="treeLevel"></span></div>
+  <div class="store-body tree-body">
+    <div class="tree-left">
+      <div class="tabs" id="treeTabs"></div>
+      <div class="tree-panel">
+        <div class="tree-head"><b id="treeName"></b><span id="treeActive"></span></div>
+        <div class="tree-grid" id="treeGrid"></div>
+      </div>
+    </div>
+    <div class="tree-info" id="treeInfo"></div>
+  </div>
+  <p class="store-msg" id="treeMsg"></p>
+</div>
+
 <div class="menu" id="pauseMenu">
   <h1>PAUSED</h1>
   <button data-action="resume">RESUME</button>
@@ -729,6 +884,7 @@
     <div class="over-title">GAME OVER</div>
     <div class="over-best" id="overBest">NEW BEST!</div>
     <div class="over-sub" id="overSub"></div>
+    <div class="over-level" id="overLevel"></div>
     <div class="over-stats">
       <div class="ostat"><span>SCORE</span><b id="oScore"></b></div>
       <div class="ostat"><span>BEST</span><b id="oBest"></b></div>
@@ -737,6 +893,7 @@
       <div class="ostat gold"><span>GOLD EARNED</span><b id="oGold"></b></div>
       <div class="ostat gold"><span>TOTAL GOLD</span><b id="oTotal"></b></div>
     </div>
+    <div class="over-xp"><span id="oLv"></span><i><b id="oXpFill"></b></i><span id="oXp"></span></div>
     <div class="over-btns">
       <button class="primary" data-action="play">PLAY AGAIN</button>
       <button data-action="main">MAIN MENU</button>
@@ -1026,7 +1183,9 @@ function reset() {
   player.ducking = false;
   player.facing = 1;
   player.moving = false;
-  player.hp = PLAYER_MAX_HP;
+  player.hp = maxHp();
+  player.undyingUsed = false;
+  player.regenT = 0;
   player.hurt = 0;
   player.dash = 0;
   player.dashCooldown = 0;
@@ -1074,7 +1233,8 @@ const menus = {
   over: document.getElementById("overMenu"),
   shop: document.getElementById("shopMenu"),
   inventory: document.getElementById("invMenu"),
-  look: document.getElementById("lookMenu")
+  look: document.getElementById("lookMenu"),
+  tree: document.getElementById("treeMenu")
 };
 let settingsReturnTo = "main";   // which menu BACK returns to
 let resetArmed = false;          // reset high score needs a second tap
@@ -1091,6 +1251,8 @@ function showMenu(name) {
   if (name === "shop") { shopMessage(""); refreshShop(); }
   if (name === "inventory") { invMessage(""); refreshInventory(); }
   if (name === "look") { lookMessage(""); refreshLook(); }
+  if (name === "tree") { treeMessage(""); refreshTree(); }
+  if (name === "main") refreshTreeBadge();
   animatePreviews();
   animateLook();
 }
@@ -1118,6 +1280,7 @@ function nextKey(obj, current) {
 // PLAY starts a short READY - SET - RUN! countdown; the run itself begins on "RUN!"
 function startGame() {
   reset();
+  refreshCostChips();
   state = "countdown";
   countdown = 0;
   countdownStage = -1;
@@ -1173,6 +1336,8 @@ const menuActions = {
   look: () => showMenu("look"),
   lookBack: () => showMenu("main"),
   lookRandom: () => randomLook(),
+  tree: () => showMenu("tree"),
+  treeBack: () => showMenu("main"),
   resume: resumeGame,
   main: goToMainMenu,
   settings: () => openSettings(state === "paused" ? "pause" : "main"),
@@ -2263,6 +2428,7 @@ window.stickgoBack = function () {
   if (menus.shop.classList.contains("open")) { showMenu("main"); return true; }
   if (menus.inventory.classList.contains("open")) { showMenu("main"); return true; }
   if (menus.look.classList.contains("open")) { showMenu("main"); return true; }
+  if (menus.tree.classList.contains("open")) { showMenu("main"); return true; }
   if (menus.settings.classList.contains("open")) { showMenu(settingsReturnTo); return true; }
   if (state === "paused") { resumeGame(); return true; }
   if (state === "over") { goToMainMenu(); return true; }
@@ -2466,7 +2632,7 @@ function dash() {
   player.act = null;
   player.dash = DASH_TIME;
   player.inv = DASH_TIME + 0.05;
-  player.dashCooldown = DASH_COOLDOWN;
+  player.dashCooldown = dashCooldown();
   player.dashDir = inputDir() || player.facing;
   player.facing = player.dashDir;
   sfx.dash();
@@ -2688,6 +2854,165 @@ const SKILL_MANA = [25, 40, 100];
 // Each skill button gets its ready aura and a chip with its mana cost (kept before the cooldown
 // parts, because showCooldown writes into the button's last child)
 [sk1Btn, sk2Btn, sk3Btn].forEach((b, i) => b.querySelector(".cd").insertAdjacentHTML("beforebegin", `<i class="aura"></i><b class="cost">${SKILL_MANA[i]}</b>`));
+// --- Skill tree ---
+// Every run's score is added to his XP; each level gives one skill point. Points buy passive skills in
+// three trees. A tree's tiers open as points go into that tree (TIER_NEED), and every skill has a base
+// level and an ACED level (one point each). RESET gives every point back.
+const SKILL_TREES = {
+  warrior:  { label: "WARRIOR", color: "#ff8a4c", tiers: [["sharp"], ["cleave", "flurry"], ["execute", "bloodlust"], ["berserker"]] },
+  mystic:   { label: "MYSTIC", color: "#6fb8ff", tiers: [["siphon"], ["efficiency", "spellpower"], ["surge", "overflow"], ["archmage"]] },
+  survivor: { label: "SURVIVOR", color: "#5fe08a", tiers: [["tough"], ["ironskin", "quickfeet"], ["regen", "treasure"], ["undying"]] }
+};
+const TIER_NEED = [0, 1, 3, 6];   // points spent in the tree before each tier opens
+// v = [base value, aced value]; the order of these is the order of the icons in pictures/icons/tree.png
+const TREE_SKILLS = {
+  sharp:      { name: "SHARP EDGE", base: "BASIC ATTACKS DEAL +10% DAMAGE.", aced: "+20% DAMAGE INSTEAD.", v: [0.1, 0.2] },
+  cleave:     { name: "CLEAVE", base: "BASIC ATTACKS REACH 15% FURTHER.", aced: "30% FURTHER.", v: [0.15, 0.3] },
+  flurry:     { name: "FLURRY", base: "BASIC ATTACKS SWING 10% FASTER.", aced: "20% FASTER.", v: [0.1, 0.2] },
+  execute:    { name: "EXECUTE", base: "BASIC HITS DEAL X2 TO ENEMIES UNDER 25% HEALTH.", aced: "UNDER 40% HEALTH.", v: [0.25, 0.4] },
+  bloodlust:  { name: "BLOODLUST", base: "BASIC HITS HEAL 1 HP.", aced: "HEAL 2 HP.", v: [1, 2] },
+  berserker:  { name: "BERSERKER", base: "BELOW 40% HEALTH YOU DEAL +30% DAMAGE.", aced: "+60% DAMAGE AND SWING 15% FASTER.", v: [0.3, 0.6] },
+  siphon:     { name: "MANA SIPHON", base: "EVERY KILL RESTORES +3 MANA.", aced: "+6 MANA.", v: [3, 6] },
+  efficiency: { name: "EFFICIENCY", base: "SKILLS COST 10% LESS MANA.", aced: "20% LESS.", v: [0.1, 0.2] },
+  spellpower: { name: "SPELL POWER", base: "SKILLS DEAL +20% DAMAGE.", aced: "+40% DAMAGE.", v: [0.2, 0.4] },
+  surge:      { name: "ARCANE SURGE", base: "CLEARING A WAVE GIVES +25 MORE MANA.", aced: "FULL MANA ON EVERY WAVE CLEAR.", v: [25, 100] },
+  overflow:   { name: "OVERFLOW", base: "MANA POTIONS GIVE DOUBLE.", aced: "HEALTH POTIONS GIVE DOUBLE TOO.", v: [1, 2] },
+  archmage:   { name: "ARCHMAGE", base: "THE ULTIMATE COSTS 80 MANA.", aced: "COSTS 65, AND EVERY SKILL HEALS 5 HP.", v: [80, 65] },
+  tough:      { name: "TOUGHNESS", base: "+20 MAX HEALTH.", aced: "+40 MAX HEALTH.", v: [20, 40] },
+  ironskin:   { name: "IRON SKIN", base: "TAKE 10% LESS DAMAGE.", aced: "20% LESS.", v: [0.1, 0.2] },
+  quickfeet:  { name: "QUICK FEET", base: "DASH RECHARGES 25% FASTER.", aced: "50% FASTER.", v: [0.25, 0.5] },
+  regen:      { name: "REGENERATION", base: "REGENERATE 1 HP EVERY 3 S.", aced: "EVERY 1.5 S.", v: [3, 1.5] },
+  treasure:   { name: "TREASURE HUNTER", base: "ENEMIES DROP 25% MORE GOLD.", aced: "50% MORE GOLD.", v: [0.25, 0.5] },
+  undying:    { name: "UNDYING", base: "ONCE PER RUN, SURVIVE A KILLING BLOW WITH 30% HEALTH.", aced: "ONCE PER WAVE.", v: [1, 2] }
+};
+const SKILL_ICON = Object.fromEntries(Object.keys(TREE_SKILLS).map((id, i) => [id, i]));
+
+const progress = { xp: 0, learned: {} };
+try { Object.assign(progress, JSON.parse(localStorage.getItem("stickgo-progress") || "{}")); } catch (e) { /* defaults */ }
+for (const id of Object.keys(progress.learned)) if (!TREE_SKILLS[id]) delete progress.learned[id];
+function saveProgress() { localStorage.setItem("stickgo-progress", JSON.stringify(progress)); }
+
+// Level n needs 400 + 100 * (n - 1) more XP to reach level n + 1
+function levelOf(xp) {
+  let lv = 1, need = 400;
+  while (xp >= need) { xp -= need; lv++; need = 400 + 100 * (lv - 1); }
+  return { lv, into: xp, need };
+}
+const skillLevel = (id) => progress.learned[id] || 0;                       // 0, 1 (base) or 2 (aced)
+const skillValue = (id) => (skillLevel(id) ? TREE_SKILLS[id].v[skillLevel(id) - 1] : 0);
+const treeOf = (id) => Object.keys(SKILL_TREES).find((t) => SKILL_TREES[t].tiers.flat().includes(id));
+const tierOf = (id) => SKILL_TREES[treeOf(id)].tiers.findIndex((row) => row.includes(id));
+const spentIn = (tree) => SKILL_TREES[tree].tiers.flat().reduce((n, id) => n + skillLevel(id), 0);
+const pointsLeft = () => levelOf(progress.xp).lv - Object.values(progress.learned).reduce((a, b) => a + b, 0);
+
+// What the skills change in a run
+function maxHp() { return PLAYER_MAX_HP + skillValue("tough"); }
+function skillCost(i) {
+  const base = i === 2 && skillLevel("archmage") ? skillValue("archmage") : SKILL_MANA[i];
+  return Math.round(base * (1 - skillValue("efficiency")));
+}
+function dashCooldown() { return DASH_COOLDOWN * (1 - skillValue("quickfeet")); }
+const berserk = () => skillLevel("berserker") && player.hp < maxHp() * 0.4;
+function basicSpeed() { return 1 + skillValue("flurry") + (berserk() && skillLevel("berserker") === 2 ? 0.15 : 0); }
+function basicDamageMul(o) {
+  let m = 1 + skillValue("sharp");
+  if (berserk()) m *= 1 + skillValue("berserker");
+  if (skillLevel("execute") && o.hp < o.maxHp * skillValue("execute")) m *= 2;
+  return m;
+}
+function heal(n) { player.hp = Math.min(maxHp(), player.hp + n); }
+
+// --- The skill tree screen ---
+let treeTab = "warrior", treeSel = "sharp";
+function refreshTree() {
+  const { lv, into, need } = levelOf(progress.xp);
+  const left = pointsLeft();
+  document.getElementById("treeLevel").textContent = `LV ${lv} · ${left} POINT${left === 1 ? "" : "S"}`;
+  const tabs = document.getElementById("treeTabs");
+  tabs.innerHTML = "";
+  for (const [key, tree] of Object.entries(SKILL_TREES)) {
+    const tab = document.createElement("button");
+    tab.className = "tab" + (key === treeTab ? " active" : "");
+    tab.style.setProperty("--rar", tree.color);
+    tab.innerHTML = `${tree.label}<small>${spentIn(key)}</small>`;
+    tab.addEventListener("click", () => { treeTab = key; treeSel = tree.tiers[0][0]; treeMessage(""); refreshTree(); });
+    tabs.appendChild(tab);
+  }
+  const tree = SKILL_TREES[treeTab], spent = spentIn(treeTab);
+  const menu = document.getElementById("treeMenu");
+  menu.style.setProperty("--tree", tree.color);
+  document.getElementById("treeName").textContent = tree.label;
+  document.getElementById("treeActive").textContent = `[ ${spent} POINT${spent === 1 ? "" : "S"} ACTIVE ]`;
+  const grid = document.getElementById("treeGrid");
+  grid.innerHTML = "";
+  for (let t = tree.tiers.length - 1; t >= 0; t--) {   // tier 4 on top, like a tree growing up
+    const row = document.createElement("div");
+    const open = spent >= TIER_NEED[t];
+    row.className = "trow" + (open ? "" : " locked");
+    row.innerHTML = `<span class="tlabel">TIER ${t + 1}</span><div class="tnodes"></div><span class="tlabel">${open ? `TIER ${t + 1}` : `NEED ${TIER_NEED[t]}`}</span>`;
+    for (const id of tree.tiers[t]) {
+      const lvl = skillLevel(id);
+      const node = document.createElement("button");
+      node.className = "tnode" + (lvl ? " learned" : "") + (lvl === 2 ? " aced" : "") + (id === treeSel ? " sel" : "");
+      node.innerHTML = `<i class="ticon" style="--i:${SKILL_ICON[id]}"></i>${lvl ? `<b class="tlvl">${lvl}</b>` : ""}${lvl === 2 ? '<b class="tace">ACED</b>' : ""}${open ? "" : '<b class="tlock"></b>'}`;
+      node.addEventListener("click", () => { treeSel = id; treeMessage(""); refreshTree(); });
+      row.querySelector(".tnodes").appendChild(node);
+    }
+    grid.appendChild(row);
+  }
+  // The selected skill: what it does, and the button to learn or ace it
+  const s = TREE_SKILLS[treeSel], lvl = skillLevel(treeSel), tier = tierOf(treeSel);
+  const open = spentIn(treeOf(treeSel)) >= TIER_NEED[tier];
+  const info = document.getElementById("treeInfo");
+  const action = lvl === 2 ? "MASTERED" : !open ? `LOCKED: ${TIER_NEED[tier]} POINTS IN ${SKILL_TREES[treeOf(treeSel)].label}` : lvl ? "ACE IT (1 POINT)" : "LEARN (1 POINT)";
+  info.innerHTML = `
+    <div class="xp"><span>LV ${lv}</span><i><b style="width:${(100 * into / need).toFixed(1)}%"></b></i><span>${fmt(into)}/${fmt(need)} XP</span></div>
+    <div class="ihead"><i class="ticon big" style="--i:${SKILL_ICON[treeSel]}"></i><div><b>${s.name}</b><small>TIER ${tier + 1} · ${["NOT LEARNED", "LEARNED", "ACED"][lvl]}</small></div></div>
+    <p class="${lvl >= 1 ? "on" : ""}"><em>BASE</em>${s.base}</p>
+    <p class="${lvl >= 2 ? "on" : ""}"><em class="ace">ACED</em>${s.aced}</p>
+    <button class="primary" id="treeLearn"${lvl === 2 || !open ? " disabled" : ""}>${action}</button>
+    <button class="small-btn" id="treeReset">RESET ALL POINTS</button>`;
+  info.querySelector("#treeLearn").addEventListener("click", () => learnSkill(treeSel));
+  info.querySelector("#treeReset").addEventListener("click", resetTree);
+  refreshTreeBadge();
+}
+
+function learnSkill(id) {
+  const lvl = skillLevel(id);
+  if (lvl >= 2) return;
+  if (spentIn(treeOf(id)) < TIER_NEED[tierOf(id)]) { treeMessage("PUT MORE POINTS IN THIS TREE TO OPEN THAT TIER"); return; }
+  if (pointsLeft() < 1) { treeMessage("NO SKILL POINTS LEFT — PLAY TO LEVEL UP"); return; }
+  progress.learned[id] = lvl + 1;
+  saveProgress();
+  sfx.point();
+  treeMessage(`${TREE_SKILLS[id].name} ${lvl ? "ACED!" : "LEARNED!"}`);
+  refreshTree();
+}
+
+let treeResetArmed = false;
+function resetTree() {
+  if (!treeResetArmed) { treeResetArmed = true; treeMessage("TAP RESET AGAIN TO GET EVERY POINT BACK"); return; }
+  treeResetArmed = false;
+  progress.learned = {};
+  saveProgress();
+  treeMessage("ALL POINTS RETURNED");
+  refreshTree();
+}
+function treeMessage(text) {
+  if (!text.startsWith("TAP RESET")) treeResetArmed = false;
+  document.getElementById("treeMsg").textContent = text;
+}
+// A little badge on the main menu's SKILLS button while there are points to spend
+function refreshTreeBadge() {
+  const left = pointsLeft(), badge = document.getElementById("treeBadge");
+  badge.textContent = left;
+  badge.style.display = left > 0 ? "" : "none";
+}
+// The mana chips on the skill buttons follow the skills' (possibly cheaper) cost
+function refreshCostChips() {
+  [sk1Btn, sk2Btn, sk3Btn].forEach((b, i) => { b.querySelector(".cost").textContent = skillCost(i); });
+}
+
 const HURT_TIME = 0.9;         // s he can't be hurt again after a hit
 const DIFF_MUL = { easy: 0.8, normal: 1, hard: 1.25 };   // enemy speed and spawn rate
 // stand = how close it gets before it acts; dmg = damage to the hero; pts = score for a kill
@@ -2719,6 +3044,7 @@ function inputDir() {
 function startWave(n) {
   wave = n;
   player.revived = false;
+  if (skillLevel("undying") === 2) player.undyingUsed = false;
   reachWave(n);
   setMapForWave(n);
   waveBanner = 2.2;
@@ -2902,7 +3228,7 @@ function updateProjectiles(dt) {
 // --- Hero ---
 function hurtPlayer(dmg, fromX) {
   if (state !== "running" || player.hurt > 0 || player.inv > 0 || player.dash > 0) return;
-  player.hp -= dmg;
+  player.hp -= Math.max(1, Math.round(dmg * (1 - skillValue("ironskin"))));
   player.hurt = HURT_TIME;
   player.stun = 0.3;
   player.act = null;
@@ -2917,6 +3243,14 @@ function hurtPlayer(dmg, fromX) {
     player.inv = 1.5;
     burst(player.x + player.w / 2, player.y + 30, 30, "#ff8a1f", 320);
     popups.push({ x: player.x + player.w / 2, y: player.y - 20, t: 0, text: "REBORN!", perk: true, life: 1.4 });
+    sfx.skill();
+  }
+  if (player.hp <= 0 && skillLevel("undying") && !player.undyingUsed) {   // undying: once per run (aced: per wave)
+    player.undyingUsed = true;
+    player.hp = Math.round(maxHp() * 0.3);
+    player.inv = 1.5;
+    burst(player.x + player.w / 2, player.y + 30, 30, "#ffd34d", 320);
+    popups.push({ x: player.x + player.w / 2, y: player.y - 20, t: 0, text: "UNDYING!", perk: true, life: 1.4 });
     sfx.skill();
   }
   if (player.hp <= 0) { player.hp = 0; die(); }
@@ -2937,6 +3271,7 @@ function startAction(spec) {
   player.buffered = false;
   player.lungeV = spec.lunge || 0;
   if (spec.skill) sfx.skill();
+  if (spec.skill && skillLevel("archmage") === 2) heal(5);
   else if (spec.basic && weaponFx()) weaponFx().swing();   // rare and legendary weapons have their own swing
   else sfx.slash();
 }
@@ -2947,7 +3282,8 @@ function dealHit(hit) {
   const basic = !!(player.act && player.act.basic), perk = basic ? swordPerk() : {};
   const finisher = basic && player.act === COMBO[COMBO.length - 1];
   const ts = basic ? typeStats() : {};
-  const front = hit.front * (ts.front || 1), back = ts.both && finisher ? front : hit.back * (ts.back || 1);
+  const reach = basic ? 1 + skillValue("cleave") : 1;
+  const front = hit.front * (ts.front || 1) * reach, back = (ts.both && finisher ? hit.front * (ts.front || 1) : hit.back * (ts.back || 1)) * reach;
   const struck = [];
   for (const o of foes) {
     if (o.dead || (!o.solid && !hit.screen)) continue;   // a ghost between flickers can't be touched
@@ -2964,9 +3300,9 @@ function dealHit(hit) {
     }
     // Only the 3rd swing of the combo staggers; the first two just hurt, so enemies can still fight back
     const light = basic && !finisher && !perk.stagger;
-    hurtFoe(o, basic ? perkDamage(perk, o, finisher, hit.dmg * (ts.dmg || 1)) : hit.dmg,
+    hurtFoe(o, basic ? perkDamage(perk, o, finisher, hit.dmg * (ts.dmg || 1) * basicDamageMul(o)) : Math.round(hit.dmg * (1 + skillValue("spellpower"))),
       f * hit.kb * (perk.kb || 1) * (ts.kb || 1) * (light ? LIGHT_PUSH : 1), !light);
-    if (basic) { perkOnHit(perk, o, finisher); struck.push(o); }
+    if (basic) { perkOnHit(perk, o, finisher); struck.push(o); if (skillLevel("bloodlust")) heal(skillValue("bloodlust")); }
   }
   if (basic) perkOnSwing(perk, finisher, struck[0], hit, struck);
   foes = foes.filter((o) => !o.dead);
@@ -2978,7 +3314,8 @@ function hurtFoe(o, dmg, push, stagger = true, quiet = false) {
   if (o.hp <= 0) {
     const d = FOES[o.kind];
     o.fling = Math.sign(push) || player.facing;
-    killEnemy(o, randInt(d.gold[0], d.gold[1]));
+    killEnemy(o, Math.round(randInt(d.gold[0], d.gold[1]) * (1 + skillValue("treasure"))));
+    if (skillLevel("siphon")) player.mana = Math.min(MANA_MAX, player.mana + skillValue("siphon"));
     kills++;
     bumpStat("kills");
     if (o.kind === "boss") bumpStat("bosses");
@@ -3083,7 +3420,7 @@ function perkDamage(perk, o, finisher, dmg) {
 
 // After a basic hit lands on o (which may have just died)
 function perkOnHit(perk, o, finisher) {
-  if (perk.heal) player.hp = Math.min(PLAYER_MAX_HP, player.hp + perk.heal);
+  if (perk.heal) player.hp = Math.min(maxHp(), player.hp + perk.heal);
   if (o.dead) {
     if (perk.gold) dropGold(o.x + o.w / 2, o.y + 20, perk.gold, o.y - 30);
     if (perk.killMana) {
@@ -3281,7 +3618,7 @@ function drawPerks() {
 
 function actionTick(dt) {
   const spec = player.act;
-  player.actT += dt * (spec.basic ? typeStats().speed || 1 : 1);   // daggers swing faster, axes slower
+  player.actT += dt * (spec.basic ? (typeStats().speed || 1) * basicSpeed() : 1);   // daggers swing faster, axes slower
   spec.hits.forEach((h, i) => {
     if (!player.fired[i] && player.actT >= spec.hitT[i]) { player.fired[i] = true; dealHit(h); }
   });
@@ -3326,6 +3663,10 @@ function update(dt) {
   for (const k of Object.keys(queued)) queued[k] = Math.max(0, queued[k] - dt);
   player.hurt = Math.max(0, player.hurt - dt);
   player.inv = Math.max(0, player.inv - dt);
+  if (skillLevel("regen") && player.hp < maxHp()) {
+    player.regenT += dt;
+    if (player.regenT >= skillValue("regen")) { player.regenT = 0; heal(1); }
+  }
   player.stun = Math.max(0, player.stun - dt);
   player.recover = Math.max(0, player.recover - dt);
   player.dashCooldown = Math.max(0, player.dashCooldown - dt);
@@ -3338,9 +3679,9 @@ function update(dt) {
   const free = !player.act && player.stun <= 0 && player.dash <= 0;
   if (free) {   // skills first (3, then 2, then 1), then the basic attack
     for (const i of [2, 1, 0]) {
-      if (queued["s" + (i + 1)] > 0 && player.mana >= SKILL_MANA[i]) {
+      if (queued["s" + (i + 1)] > 0 && player.mana >= skillCost(i)) {
         queued["s" + (i + 1)] = 0;
-        player.mana -= SKILL_MANA[i];
+        player.mana -= skillCost(i);
         startAction(SKILLS[i]);
         break;
       }
@@ -3388,8 +3729,8 @@ function update(dt) {
   if (player.onGround) player.y = GROUND_Y - player.h;
 
   // The shaded clock on a skill fills with the mana it still lacks (and shows how many points that is)
-  [[dashBtn, player.dashCooldown, DASH_COOLDOWN],
-   ...[sk1Btn, sk2Btn, sk3Btn].map((b, i) => [b, Math.max(0, SKILL_MANA[i] - player.mana), SKILL_MANA[i]])
+  [[dashBtn, player.dashCooldown, dashCooldown()],
+   ...[sk1Btn, sk2Btn, sk3Btn].map((b, i) => [b, Math.max(0, skillCost(i) - player.mana), skillCost(i)])
   ].forEach(([b, left, max], i) => showCooldown(b, left, max, i > 0));
   if (hintTimer > 0) {
     hintTimer -= dt;
@@ -3408,9 +3749,10 @@ function update(dt) {
     if (waveClearTimer < 0) {
       waveClearTimer = 2.5;
       score += 50;
-      player.hp = Math.min(PLAYER_MAX_HP, player.hp + WAVE_CLEAR_HP);
-      player.mana = Math.min(MANA_MAX, player.mana + WAVE_CLEAR_MANA);
-      bossBanner = { title: `WAVE ${wave} CLEARED`, sub: `+50 SCORE   +${WAVE_CLEAR_HP} HP   +${WAVE_CLEAR_MANA} MANA`, t: 2.2 };
+      const manaBack = Math.min(MANA_MAX, WAVE_CLEAR_MANA + skillValue("surge"));   // arcane surge gives more
+      heal(WAVE_CLEAR_HP);
+      player.mana = Math.min(MANA_MAX, player.mana + manaBack);
+      bossBanner = { title: `WAVE ${wave} CLEARED`, sub: `+50 SCORE   +${WAVE_CLEAR_HP} HP   +${manaBack} MANA`, t: 2.2 };
       sfx.point();
     } else {
       waveClearTimer -= dt;
@@ -3495,9 +3837,10 @@ function updatePotions(dt) {
     if (p.y > GROUND_Y - 9) { p.y = GROUND_Y - 9; p.vy *= -0.35; p.vx *= 0.5; if (Math.abs(p.vy) < 40) p.vy = 0; }
     if (Math.abs(p.x - pcx) < 34 && player.y + player.h > GROUND_Y - 60 && state === "running") {
       p.taken = true;
-      if (p.kind === "hp") player.hp = Math.min(PLAYER_MAX_HP, player.hp + POTION_HEAL);
-      else player.mana = Math.min(MANA_MAX, player.mana + POTION_MANA);
-      popups.push({ x: p.x, y: p.y - 22, t: 0, text: p.kind === "hp" ? "+" + POTION_HEAL + " HP" : "+" + POTION_MANA + " MANA" });
+      const hpGain = POTION_HEAL * (skillLevel("overflow") === 2 ? 2 : 1), manaGain = POTION_MANA * (skillLevel("overflow") ? 2 : 1);
+      if (p.kind === "hp") heal(hpGain);
+      else player.mana = Math.min(MANA_MAX, player.mana + manaGain);
+      popups.push({ x: p.x, y: p.y - 22, t: 0, text: p.kind === "hp" ? "+" + hpGain + " HP" : "+" + manaGain + " MANA" });
       burst(p.x, p.y, 8, p.kind === "hp" ? "#ff5a5a" : "#5aa8ff", 160);
       sfx.point();
     } else if (p.age > POTION_LIFE) p.taken = true;
@@ -3553,6 +3896,22 @@ function gameOver() {
   state = "over";
   for (const c of coins) collectCoin();   // coins still in the air count too
   coins = [];
+  const before = levelOf(progress.xp);
+  progress.xp += score;
+  saveProgress();
+  const after = levelOf(progress.xp), gained = after.lv - before.lv;
+  const lvl = document.getElementById("overLevel");
+  lvl.classList.toggle("show", gained > 0);
+  lvl.textContent = `LEVEL UP! LV ${after.lv} \u00b7 +${gained} SKILL POINT${gained === 1 ? "" : "S"}`;
+  document.getElementById("oLv").textContent = `LV ${after.lv}`;
+  document.getElementById("oXp").textContent = `+${fmt(score)} XP`;
+  const fill = document.getElementById("oXpFill");
+  fill.style.transition = "none";
+  fill.style.width = (gained ? 0 : (100 * before.into) / before.need) + "%";
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    fill.style.transition = "";
+    fill.style.width = ((100 * after.into) / after.need).toFixed(1) + "%";
+  }));
   const newBest = score > high(runDiff);
   if (newBest) {
     highScores[runDiff] = score;
@@ -5083,11 +5442,11 @@ function draw() {
     ctx.fillStyle = "#ffffff";
     ctx.fillText(label, 84 + 95, y + 11);
   };
-  bar(22, player.hp / PLAYER_MAX_HP, player.hp > 30 ? "#3fbf5a" : "#e02020", `HEALTH ${Math.round(100 * player.hp / PLAYER_MAX_HP)}%`);
+  bar(22, player.hp / maxHp(), player.hp > maxHp() * 0.3 ? "#3fbf5a" : "#e02020", `HEALTH ${Math.round(100 * player.hp / maxHp())}%`);
   bar(42, player.mana / MANA_MAX, "#3d8bff", `MANA ${Math.round(100 * player.mana / MANA_MAX)}%`);
   // Ticks show what each skill costs, so he can see how much he can spend
   ctx.fillStyle = colors.ink;
-  for (const c of SKILL_MANA) if (c < MANA_MAX) ctx.fillRect(84 + 190 * c / MANA_MAX - 1, 42, 2, 14);
+  for (const c of [0, 1, 2].map(skillCost)) if (c < MANA_MAX) ctx.fillRect(84 + 190 * c / MANA_MAX - 1, 42, 2, 14);
   ctx.font = "bold 12px 'Courier New', monospace";
   ctx.textAlign = "left";
   ctx.fillText(`KILLS ${kills}`, 84, 72);
