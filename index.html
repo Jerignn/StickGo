@@ -100,10 +100,70 @@
   #pad .skill, #pad .spell { background:
       radial-gradient(circle at 50% 30%, rgba(80, 120, 180, 0.55), rgba(12, 20, 38, 0.78) 72%) padding-box,
       linear-gradient(160deg, #e6f3ff, #5aa2ff 40%, #173a78 75%, #8cc4ff) border-box; }
-  #sk3Btn { background:
-      radial-gradient(circle at 50% 30%, rgba(140, 110, 60, 0.55), rgba(30, 20, 10, 0.8) 72%) padding-box,
-      linear-gradient(160deg, #fff4c8, #f0b93a 40%, #7a4d0c 75%, #ffd76a) border-box; }
-  #sk3Btn::before { border-color: rgba(255, 220, 120, 0.95); }
+  /* Skills each have their own theme: SLAM is ember orange, SPIN is wind cyan, the ULTIMATE royal gold.
+     --th = the theme colour, --th-hi / --th-lo = its light and dark ends, --in-hi / --in-lo = the glass. */
+  #sk1Btn { --th: #ff8a1f; --th-hi: #ffe0b0; --th-lo: #6e2204; --in-hi: rgba(200, 100, 40, 0.6); --in-lo: rgba(40, 12, 4, 0.85); }
+  #sk2Btn { --th: #38e0ff; --th-hi: #e0fbff; --th-lo: #06405c; --in-hi: rgba(40, 170, 210, 0.55); --in-lo: rgba(4, 26, 40, 0.85); }
+  #sk3Btn { --th: #ffc93a; --th-hi: #fff6cf; --th-lo: #5a2d00; --in-hi: rgba(170, 110, 220, 0.6); --in-lo: rgba(30, 10, 46, 0.88); }
+  #pad .skill {
+    border-width: 4px;
+    background:
+      radial-gradient(circle at 50% 28%, var(--in-hi), var(--in-lo) 72%) padding-box,
+      conic-gradient(from 210deg, var(--th-hi), var(--th), var(--th-lo), var(--th), var(--th-hi)) border-box;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(0, 0, 0, 0.55), inset 0 0 12px var(--th);
+  }
+  #pad .skill::before { border-color: var(--th); }
+  #pad .skill .glyph { filter: drop-shadow(0 0 4px var(--th)) drop-shadow(0 2px 0 rgba(0, 0, 0, 0.6)); }
+  #pad .skill.cooling .glyph { filter: none; }
+  #pad .skill .cd { background: conic-gradient(transparent calc((1 - var(--cd, 0)) * 1turn), rgba(6, 4, 14, 0.74) 0); }
+  /* Ready: a soft aura breathes around the skill in its colour (the ultimate gets a turning ring of light) */
+  .skill .aura {
+    position: absolute;
+    inset: -7px;
+    border-radius: 50%;
+    pointer-events: none;
+    box-shadow: 0 0 12px 3px var(--th), inset 0 0 8px var(--th);
+    animation: aura-breathe 1.6s ease-in-out infinite;
+  }
+  @keyframes aura-breathe { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.95; } }
+  #sk3Btn .aura {
+    inset: -9px;
+    box-shadow: 0 0 16px 4px rgba(255, 201, 58, 0.7);
+    background: conic-gradient(#fff6cf, transparent 18%, #ffc93a 25%, transparent 45%, #c77dff 52%, transparent 70%, #ffc93a 78%, transparent 95%, #fff6cf);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+    animation: aura-spin 2.2s linear infinite;
+  }
+  @keyframes aura-spin { to { transform: rotate(1turn); } }
+  .skill.cooling .aura { display: none; }
+  /* Mana cost: a little pixel chip on the lower right; it turns red while he can't afford the skill */
+  .skill .cost {
+    position: absolute;
+    right: -6px;
+    bottom: -4px;
+    min-width: 22px;
+    padding: 1px 3px 1px 12px;
+    box-sizing: border-box;
+    border: 2px solid #8fd0ff;
+    background: #123a86;
+    box-shadow: 2px 2px 0 #000;
+    font: bold 11px "Courier New", monospace;
+    line-height: 13px;
+    color: #fff;
+    text-align: right;
+    pointer-events: none;
+  }
+  .skill .cost::before {   /* a pixel mana drop */
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    width: 6px;
+    height: 7px;
+    background: #5ec8ff;
+    clip-path: polygon(50% 0, 100% 55%, 85% 100%, 15% 100%, 0 55%);
+  }
+  .skill.cooling .cost { border-color: #ff7a7a; background: #6a1020; }
 
   /* The joystick: a ring with faint arrows; the knob follows the thumb and springs back when it lifts */
   #stick {
@@ -2325,6 +2385,9 @@ const WAVE_CLEAR_HP = 30, WAVE_CLEAR_MANA = 50;   // restored when a wave is cle
 const POTION_CHANCE = 0.16, POTION_HEAL = 15, POTION_MANA = 20, POTION_LIFE = 9;
 const MANA_MAX = 100;
 const SKILL_MANA = [25, 40, 100];
+// Each skill button gets its ready aura and a chip with its mana cost (kept before the cooldown
+// parts, because showCooldown writes into the button's last child)
+[sk1Btn, sk2Btn, sk3Btn].forEach((b, i) => b.querySelector(".cd").insertAdjacentHTML("beforebegin", `<i class="aura"></i><b class="cost">${SKILL_MANA[i]}</b>`));
 const HURT_TIME = 0.9;         // s he can't be hurt again after a hit
 const DIFF_MUL = { easy: 0.8, normal: 1, hard: 1.25 };   // enemy speed and spawn rate
 // stand = how close it gets before it acts; dmg = damage to the hero; pts = score for a kill
