@@ -7,6 +7,8 @@ of its haft, which end carries the blade and where his hand grips it, then write
 For every shop weapon (pictures/weapons/<id>.png) it keeps only the weapon itself (no particles):
   pictures/hold/w_<id>.png
 and it writes hold-data.js with the grip and angle of every frame and every weapon.
+The spears, axes, daggers and scythes are drawn by tools/make_new_weapons.py, which writes their own
+held pictures: run it again after this script so their entries are back in hold-data.js.
 Usage: python tools/make_hold.py [debug.png]"""
 import json, math, os, sys
 from PIL import Image, ImageDraw
@@ -171,8 +173,11 @@ def main():
         trail_sheet.save(f"{OUT}/trail_{name}.png", optimize=True)
         data["hero"][name] = grips
         debug_rows.append(dbg)
+    sys.path.insert(0, os.path.dirname(__file__))
+    from weapon_designs import DESIGNS
+    drawn = {wid for ids in DESIGNS.values() for wid in ids}
     for fname in sorted(os.listdir("pictures/weapons")):
-        if not fname.endswith(".png"): continue
+        if not fname.endswith(".png") or fname[:-4] in drawn: continue
         wid = fname[:-4]
         img, info = weapon_hold(f"pictures/weapons/{fname}")
         img.save(f"{OUT}/w_{wid}.png", optimize=True)

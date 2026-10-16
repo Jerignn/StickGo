@@ -573,6 +573,7 @@
     text-shadow: 0 1px 2px #000;
   }
   .card .tag { font: bold 11px "Courier New", monospace; letter-spacing: 3px; }
+  .card .wtype { color: #ffb45a; font: bold 9px "Courier New", monospace; letter-spacing: 1px; text-align: center; min-height: 2.2em; display: flex; align-items: center; }
   .card .perk { color: #9fe3ff; font: bold 10px "Courier New", monospace; line-height: 1.15; min-height: 2.3em; text-align: center; text-shadow: 0 1px 2px #000; }
   .store-menu .card button { min-width: 0; width: 100%; padding: 6px 8px; font-size: 15px; }
   .store-menu .card button.cant,
@@ -672,6 +673,7 @@
 <div class="menu store-menu" id="shopMenu">
   <div class="store-top"><button class="back-btn" data-action="shopBack">BACK</button><h1>SHOP</h1><span class="gold-chip" id="shopGold"></span></div>
   <div class="store-body">
+    <div class="tabs sections" id="shopTypes"></div>
     <div class="tabs" id="shopTabs"></div>
     <div class="grid" id="shopItems"></div>
   </div>
@@ -680,6 +682,7 @@
 
 <div class="menu store-menu" id="invMenu">
   <div class="store-top"><button class="back-btn" data-action="invBack">BACK</button><h1>INVENTORY</h1><span class="gold-chip" id="invGold"></span></div>
+  <div class="tabs sections" id="invTypes"></div>
   <div class="store-body inv-body">
     <div class="inv-equipped" id="invEquipped"></div>
     <div class="grid" id="invItems"></div>
@@ -858,7 +861,7 @@ const RARITIES = {
 // Skins with img are pixel-art pictures from pictures/weapons/ (cut by tools/cut_weapons.py);
 // slash = the SLASH_FX his basic attacks leave while it is equipped.
 const SWORD_SKINS = {
-  starter: { name: "STARTER SCYTHE", rarity: null, price: 0, blade: null, guard: null, len: 26, width: 3 },
+  starter: { name: "STARTER SCYTHE", type: "scythe", rarity: null, price: 0, blade: null, guard: null, len: 26, width: 3 },
   rusty:         { name: "RUSTY SABRE", rarity: "common", price: 100, img: "rusty" },
   wooden:        { name: "WOODEN SWORD", rarity: "common", price: 100, img: "wooden" },
   cleaver:       { name: "BUTCHER CLEAVER", rarity: "common", price: 150, img: "cleaver" },
@@ -880,8 +883,61 @@ const SWORD_SKINS = {
   ember_feather: { name: "EMBER FEATHER", rarity: "legendary", price: 5000, img: "ember_feather", slash: "feather" },
   thunder:       { name: "THUNDER FANG", rarity: "legendary", price: 5500, img: "thunder", slash: "thunder" },
   toxic:         { name: "PLAGUE BLADE", rarity: "legendary", price: 5500, img: "toxic", slash: "plague" },
-  gearblade:     { name: "CLOCKWORK BLADE", rarity: "legendary", price: 6000, img: "gearblade", slash: "clockwork" }
+  gearblade:     { name: "CLOCKWORK BLADE", rarity: "legendary", price: 6000, img: "gearblade", slash: "clockwork" },
+  // Spears, axes, daggers and scythes (drawn by tools/make_new_weapons.py)
+  wooden_spear:    { name: "WOODEN SPEAR", type: "spear", rarity: "common", price: 120, img: "wooden_spear" },
+  iron_pike:       { name: "IRON PIKE", type: "spear", rarity: "common", price: 200, img: "iron_pike" },
+  bronze_glaive:   { name: "BRONZE GLAIVE", type: "spear", rarity: "uncommon", price: 450, img: "bronze_glaive" },
+  frost_lance:     { name: "FROST LANCE", type: "spear", rarity: "uncommon", price: 550, img: "frost_lance" },
+  storm_trident:   { name: "STORM TRIDENT", type: "spear", rarity: "rare", price: 1300, img: "storm_trident", slash: "aero" },
+  crimson_halberd: { name: "CRIMSON HALBERD", type: "spear", rarity: "rare", price: 1500, img: "crimson_halberd", slash: "crimson" },
+  gungnir:         { name: "CELESTIAL GUNGNIR", type: "spear", rarity: "legendary", price: 7000, img: "gungnir", slash: "sun" },
+  abyss_lance:     { name: "ABYSSAL LANCE", type: "spear", rarity: "legendary", price: 7000, img: "abyss_lance", slash: "voidbringer" },
+  dragonfire_pike: { name: "DRAGONFIRE PIKE", type: "spear", rarity: "legendary", price: 7500, img: "dragonfire_pike", slash: "dragon" },
+  zeus_trident:    { name: "ZEUS TRIDENT", type: "spear", rarity: "legendary", price: 8000, img: "zeus_trident", slash: "thunder" },
+  hatchet:         { name: "HATCHET", type: "axe", rarity: "common", price: 100, img: "hatchet" },
+  woodcutter_axe:  { name: "WOODCUTTER AXE", type: "axe", rarity: "common", price: 180, img: "woodcutter_axe" },
+  bearded_axe:     { name: "BEARDED AXE", type: "axe", rarity: "uncommon", price: 450, img: "bearded_axe" },
+  bone_axe:        { name: "BONE AXE", type: "axe", rarity: "uncommon", price: 550, img: "bone_axe" },
+  frostbite_axe:   { name: "FROSTBITE AXE", type: "axe", rarity: "rare", price: 1300, img: "frostbite_axe", slash: "frostbite" },
+  ember_axe:       { name: "EMBER AXE", type: "axe", rarity: "rare", price: 1400, img: "ember_axe", slash: "crimson" },
+  titans_wrath:    { name: "TITAN'S WRATH", type: "axe", rarity: "legendary", price: 7000, img: "titans_wrath", slash: "sun" },
+  void_reaver:     { name: "VOID REAVER", type: "axe", rarity: "legendary", price: 7000, img: "void_reaver", slash: "shadow" },
+  worldsplitter:   { name: "WORLDSPLITTER", type: "axe", rarity: "legendary", price: 8000, img: "worldsplitter", slash: "dragon" },
+  stormbreaker:    { name: "STORMBREAKER", type: "axe", rarity: "legendary", price: 7500, img: "stormbreaker", slash: "thunder" },
+  rusty_shiv:      { name: "RUSTY SHIV", type: "dagger", rarity: "common", price: 100, img: "rusty_shiv" },
+  kunai:           { name: "KUNAI", type: "dagger", rarity: "common", price: 160, img: "kunai" },
+  wavy_kris:       { name: "WAVY KRIS", type: "dagger", rarity: "uncommon", price: 420, img: "wavy_kris" },
+  venom_fang:      { name: "VENOM FANG", type: "dagger", rarity: "uncommon", price: 520, img: "venom_fang" },
+  night_dirk:      { name: "NIGHT DIRK", type: "dagger", rarity: "rare", price: 1200, img: "night_dirk", slash: "shadow" },
+  ice_stiletto:    { name: "ICE STILETTO", type: "dagger", rarity: "rare", price: 1300, img: "ice_stiletto", slash: "frostbite" },
+  demon_fang:      { name: "DEMON FANG", type: "dagger", rarity: "legendary", price: 6500, img: "demon_fang", slash: "crimson" },
+  starfall:        { name: "STARFALL", type: "dagger", rarity: "legendary", price: 6500, img: "starfall", slash: "voidbringer" },
+  phoenix_talon:   { name: "PHOENIX TALON", type: "dagger", rarity: "legendary", price: 7000, img: "phoenix_talon", slash: "feather" },
+  phase_blade:     { name: "PHASE BLADE", type: "dagger", rarity: "legendary", price: 7000, img: "phase_blade", slash: "laser" },
+  farm_scythe:     { name: "FARM SCYTHE", type: "scythe", rarity: "common", price: 120, img: "farm_scythe" },
+  iron_scythe:     { name: "IRON SCYTHE", type: "scythe", rarity: "common", price: 200, img: "iron_scythe" },
+  bone_scythe:     { name: "BONE SCYTHE", type: "scythe", rarity: "uncommon", price: 480, img: "bone_scythe" },
+  thorn_scythe:    { name: "THORN SCYTHE", type: "scythe", rarity: "uncommon", price: 560, img: "thorn_scythe" },
+  crescent_moon:   { name: "CRESCENT MOON", type: "scythe", rarity: "rare", price: 1400, img: "crescent_moon", slash: "aero" },
+  winter_reaper:   { name: "WINTER REAPER", type: "scythe", rarity: "rare", price: 1500, img: "winter_reaper", slash: "frostbite" },
+  grim_death:      { name: "GRIM DEATH", type: "scythe", rarity: "legendary", price: 7500, img: "grim_death", slash: "shadow" },
+  blood_moon:      { name: "BLOOD MOON REAPER", type: "scythe", rarity: "legendary", price: 7500, img: "blood_moon", slash: "crimson" },
+  soul_harvester:  { name: "SOUL HARVESTER", type: "scythe", rarity: "legendary", price: 8000, img: "soul_harvester", slash: "plague" },
+  eclipse_scythe:  { name: "ECLIPSE SCYTHE", type: "scythe", rarity: "legendary", price: 8000, img: "eclipse_scythe", slash: "sun" }
 };
+// Weapon types: each changes how his basic attacks play (the starter scythe stays plain).
+// front / back = reach in front of and behind him, dmg / kb = damage and shove, speed = how fast the
+// swings play, both = the 3rd hit reaches as far behind him as in front.
+const WEAPON_TYPES = {
+  sword:  { label: "SWORDS", one: "SWORD", feel: "BALANCED" },
+  spear:  { label: "SPEARS", one: "SPEAR", feel: "LONG REACH", front: 1.45, back: 0.4, speed: 0.92 },
+  axe:    { label: "AXES", one: "AXE", feel: "HEAVY, HITS BOTH SIDES ON 3RD", dmg: 1.35, kb: 1.5, speed: 0.8, both: true },
+  dagger: { label: "DAGGERS", one: "DAGGER", feel: "FAST STABS", dmg: 0.72, front: 0.8, speed: 1.5 },
+  scythe: { label: "SCYTHES", one: "SCYTHE", feel: "HITS BEHIND TOO", front: 1.1, back: 3 }
+};
+const weaponType = (skin) => WEAPON_TYPES[skin.type || "sword"];
+function typeStats() { return skinState.equipped === "starter" ? {} : weaponType(equippedSkin()); }
 const fmt = (n) => n.toLocaleString("en-US");
 const skinState = Object.assign(
   { owned: ["starter"], equipped: "starter" },
@@ -1164,6 +1220,8 @@ document.querySelectorAll(".menu button").forEach((b) => {
 
 // --- Shop ---
 let shopTab = "common";   // which rarity tab is showing
+let shopType = "sword";   // which weapon type is showing
+let invType = "all";      // the inventory's weapon-type filter
 let previewTimer = null;
 
 // A card with the sword picture, name and rarity. The caller adds the button's text and action.
@@ -1176,9 +1234,10 @@ function swordCard(id) {
     card.style.setProperty("--rar", info.color);
     card.style.setProperty("--rar-glow", info.glow);
   }
-  card.innerHTML = `<canvas width="320" height="128"></canvas>
+  card.innerHTML = `<canvas width="320" height="190"></canvas>
     <div class="name">${skin.name}</div>
     <div class="tag" style="color:${info.color}">${info.label}</div>
+    <div class="wtype">${id === "starter" ? "SCYTHE" : `${weaponType(skin).one} &middot; ${weaponType(skin).feel}`}</div>
     <div class="perk">${(SWORD_PERKS[id] || { text: "NO PERK" }).text}</div>
     <button></button>`;
   const canvas = card.querySelector("canvas");
@@ -1202,12 +1261,24 @@ function animatePreviews() {
 // One tab per rarity, and below it that rarity's swords
 function refreshShop() {
   document.getElementById("shopGold").innerHTML = `<span class="coin"></span>${fmt(totalGold)}`;
+  const types = document.getElementById("shopTypes");
   const tabs = document.getElementById("shopTabs");
   const row = document.getElementById("shopItems");
+  types.innerHTML = "";
   tabs.innerHTML = "";
   row.innerHTML = "";
+  const ofType = (id, type) => (SWORD_SKINS[id].type || "sword") === type && SWORD_SKINS[id].rarity && !SWORD_SKINS[id].legacy;
+  for (const [type, info] of Object.entries(WEAPON_TYPES)) {
+    const ids = Object.keys(SWORD_SKINS).filter((id) => ofType(id, type));
+    const tab = document.createElement("button");
+    tab.className = "tab" + (type === shopType ? " active" : "");
+    tab.style.setProperty("--rar", "#ff8a1f");
+    tab.innerHTML = `${info.label}<small>${ids.filter((id) => skinState.owned.includes(id)).length}/${ids.length}</small>`;
+    tab.addEventListener("click", () => { shopType = type; shopMessage(""); refreshShop(); });
+    types.appendChild(tab);
+  }
   for (const [rarity, info] of Object.entries(RARITIES)) {
-    const ids = Object.keys(SWORD_SKINS).filter((id) => SWORD_SKINS[id].rarity === rarity && !SWORD_SKINS[id].legacy);
+    const ids = Object.keys(SWORD_SKINS).filter((id) => SWORD_SKINS[id].rarity === rarity && ofType(id, shopType));
     const owned = ids.filter((id) => skinState.owned.includes(id)).length;
     const tab = document.createElement("button");
     tab.className = "tab" + (rarity === shopTab ? " active" : "");
@@ -1217,7 +1288,7 @@ function refreshShop() {
     tabs.appendChild(tab);
   }
   for (const [id, skin] of Object.entries(SWORD_SKINS)) {
-    if (skin.rarity !== shopTab || skin.legacy) continue;
+    if (skin.rarity !== shopTab || !ofType(id, shopType)) continue;
     const owned = skinState.owned.includes(id);
     const card = swordCard(id);
     const btn = card.querySelector("button");
@@ -1258,7 +1329,7 @@ function refreshInventory() {
   const eq = SWORD_SKINS[skinState.equipped] || SWORD_SKINS.starter;
   const eqInfo = RARITIES[eq.rarity] || { label: "STARTER", color: "#ffffff" };
   const panel = document.getElementById("invEquipped");
-  panel.innerHTML = `<div class="label">EQUIPPED</div><canvas width="320" height="128"></canvas>
+  panel.innerHTML = `<div class="label">EQUIPPED</div><canvas width="320" height="190"></canvas>
     <div class="name">${eq.name}</div>
     <div class="tag" style="color:${eqInfo.color}">${eqInfo.label}</div>
     <div class="perk">${(SWORD_PERKS[skinState.equipped] || { text: "NO PERK" }).text}</div>`;
@@ -1266,10 +1337,22 @@ function refreshInventory() {
   if (eq.fx || eq.glow || eq.slash) big.dataset.anim = skinState.equipped;
   drawSwordPreview(big, eq);
 
+  const types = document.getElementById("invTypes");
+  types.innerHTML = "";
+  for (const [type, label] of [["all", "ALL"], ...Object.entries(WEAPON_TYPES).map(([k, t]) => [k, t.label])]) {
+    const count = skinState.owned.filter((id) => type === "all" || (SWORD_SKINS[id].type || "sword") === type).length;
+    const tab = document.createElement("button");
+    tab.className = "tab" + (type === invType ? " active" : "");
+    tab.style.setProperty("--rar", "#ff8a1f");
+    tab.innerHTML = `${label}<small>${count}</small>`;
+    tab.addEventListener("click", () => { invType = type; invMessage(""); refreshInventory(); });
+    types.appendChild(tab);
+  }
   const row = document.getElementById("invItems");
   row.innerHTML = "";
   for (const rarity of [null, ...Object.keys(RARITIES)]) {
-    const ids = Object.keys(SWORD_SKINS).filter((id) => SWORD_SKINS[id].rarity === rarity && skinState.owned.includes(id));
+    const ids = Object.keys(SWORD_SKINS).filter((id) => SWORD_SKINS[id].rarity === rarity && skinState.owned.includes(id) &&
+      (invType === "all" || (SWORD_SKINS[id].type || "sword") === invType));
     if (!ids.length) continue;
     const info = RARITIES[rarity] || { label: "STARTER", color: "#ffffff" };
     const head = document.createElement("div");
@@ -1288,6 +1371,7 @@ function refreshInventory() {
     }
   }
   if (skinState.owned.length < 2) invMessage("BUY MORE WEAPONS IN THE SHOP");
+  else if (!row.children.length) invMessage(`NO ${WEAPON_TYPES[invType].label} YET — GET SOME IN THE SHOP`);
 }
 
 function equipSkin(id) {
@@ -2862,12 +2946,14 @@ function dealHit(hit) {
   const f = player.facing, pcx = player.x + player.w / 2;
   const basic = !!(player.act && player.act.basic), perk = basic ? swordPerk() : {};
   const finisher = basic && player.act === COMBO[COMBO.length - 1];
+  const ts = basic ? typeStats() : {};
+  const front = hit.front * (ts.front || 1), back = ts.both && finisher ? front : hit.back * (ts.back || 1);
   const struck = [];
   for (const o of foes) {
     if (o.dead || (!o.solid && !hit.screen)) continue;   // a ghost between flickers can't be touched
     const ocx = o.x + o.w / 2;
     const ahead = (ocx - pcx) * f;   // how far in front of him it stands
-    if (!hit.screen && (ahead < -hit.back - o.w / 2 || ahead > hit.front + o.w / 2)) continue;
+    if (!hit.screen && (ahead < -back - o.w / 2 || ahead > front + o.w / 2)) continue;
     if (!hit.screen && player.y + player.h < GROUND_Y - 70) continue;   // too high above them to reach
     // A guard's shield stops anything from the side he's facing; only the ultimate gets past
     if (o.shield && !hit.screen && !perk.pierce && o.dir === (pcx >= ocx ? 1 : -1)) {
@@ -2878,7 +2964,8 @@ function dealHit(hit) {
     }
     // Only the 3rd swing of the combo staggers; the first two just hurt, so enemies can still fight back
     const light = basic && !finisher && !perk.stagger;
-    hurtFoe(o, basic ? perkDamage(perk, o, finisher, hit.dmg) : hit.dmg, f * hit.kb * (perk.kb || 1) * (light ? LIGHT_PUSH : 1), !light);
+    hurtFoe(o, basic ? perkDamage(perk, o, finisher, hit.dmg * (ts.dmg || 1)) : hit.dmg,
+      f * hit.kb * (perk.kb || 1) * (ts.kb || 1) * (light ? LIGHT_PUSH : 1), !light);
     if (basic) { perkOnHit(perk, o, finisher); struck.push(o); }
   }
   if (basic) perkOnSwing(perk, finisher, struck[0], hit, struck);
@@ -2935,7 +3022,47 @@ const SWORD_PERKS = {
   ember_feather: { text: "3RD HIT THROWS 3 FIRE FEATHERS", feathers: true },
   thunder:       { text: "3RD HIT CHAINS LIGHTNING TO 2", chain: 2 },
   toxic:         { text: "3RD HIT LEAVES A POISON CLOUD", cloud: true },
-  gearblade:     { text: "EVERY 5TH HIT IS A CRIT (X2)", every: 5 }
+  gearblade:     { text: "EVERY 5TH HIT IS A CRIT (X2)", every: 5 },
+  wooden_spear:    { text: "+10% KNOCKBACK", kb: 1.1 },
+  iron_pike:       { text: "+8% DAMAGE", dmg: 1.08 },
+  bronze_glaive:   { text: "HITS BLEED (3 DMG/S, 3 S)", dot: { dps: 3, time: 3, color: "#c01818" } },
+  frost_lance:     { text: "30% CHANCE TO SLOW", slowChance: 0.3 },
+  storm_trident:   { text: "SWINGS SEND A WIND WAVE", gust: true },
+  crimson_halberd: { text: "PIERCES SHIELDS, 3RD HIT +50%", pierce: true, finisherDmg: 1.5 },
+  gungnir:         { text: "3RD HIT: HOLY BEAM. PIERCES SHIELDS", beam: true, pierce: true },
+  abyss_lance:     { text: "3RD HIT PULLS IN. HITS BURN WITH VOID", pull: true, dot: { dps: 4, time: 3, color: "#b266ff" } },
+  dragonfire_pike: { text: "HITS BURN. 3RD HIT: FIRE PATCH", dot: { dps: 4, time: 3, color: "#ff6a1a", fire: true }, spread: true, patch: true },
+  zeus_trident:    { text: "3RD HIT CHAINS LIGHTNING TO 3. 25% SLOW", chain: 3, slowChance: 0.25 },
+  hatchet:         { text: "+10% DAMAGE", dmg: 1.1 },
+  woodcutter_axe:  { text: "KILLS DROP +1 GOLD", gold: 1 },
+  bearded_axe:     { text: "BIG KNOCKBACK, EVERY HIT STAGGERS", kb: 1.4, stagger: true },
+  bone_axe:        { text: "KILLS RESTORE +6 MANA", killMana: 6 },
+  frostbite_axe:   { text: "3RD HIT FREEZES FOR 1.2 S", freeze: 1.2 },
+  ember_axe:       { text: "HITS BURN, BURN SPREADS ON KILL", dot: { dps: 4, time: 3, color: "#ff6a1a", fire: true }, spread: true },
+  titans_wrath:    { text: "+15% DAMAGE. 3RD HIT: HOLY BEAM", dmg: 1.15, beam: true },
+  void_reaver:     { text: "HITS FROM BEHIND X2. 3RD HIT PULLS IN", backstab: 2, pull: true },
+  worldsplitter:   { text: "HITS BURN. 3RD HIT +50% AND FIRE PATCH", dot: { dps: 4, time: 3, color: "#ff6a1a", fire: true }, finisherDmg: 1.5, patch: true },
+  stormbreaker:    { text: "PIERCES SHIELDS. 3RD HIT CHAINS TO 3", pierce: true, chain: 3 },
+  rusty_shiv:      { text: "HITS BLEED (2 DMG/S, 3 S)", dot: { dps: 2, time: 3, color: "#c01818" } },
+  kunai:           { text: "15% CHANCE OF DOUBLE DAMAGE", critChance: 0.15 },
+  wavy_kris:       { text: "HEAL 1 HP PER HIT", heal: 1 },
+  venom_fang:      { text: "HITS POISON (4 DMG/S, 3 S)", dot: { dps: 4, time: 3, color: "#6fdc3a" } },
+  night_dirk:      { text: "HITS FROM BEHIND DEAL X2", backstab: 2 },
+  ice_stiletto:    { text: "30% CHANCE TO SLOW", slowChance: 0.3 },
+  demon_fang:      { text: "EVERY 4TH HIT CRITS. HEAL 1 HP PER HIT", every: 4, heal: 1 },
+  starfall:        { text: "25% CRIT CHANCE. 3RD HIT PULLS IN", critChance: 0.25, pull: true },
+  phoenix_talon:   { text: "3RD HIT: 3 FIRE FEATHERS. REVIVE ONCE PER WAVE", feathers: true, revive: true },
+  phase_blade:     { text: "PIERCES SHIELDS. SWINGS SEND A WAVE", pierce: true, gust: true },
+  farm_scythe:     { text: "+5% DAMAGE", dmg: 1.05 },
+  iron_scythe:     { text: "+10% DAMAGE", dmg: 1.1 },
+  bone_scythe:     { text: "KILLS RESTORE +5 MANA", killMana: 5 },
+  thorn_scythe:    { text: "HITS BLEED (3 DMG/S, 3 S)", dot: { dps: 3, time: 3, color: "#3f9a2a" } },
+  crescent_moon:   { text: "SWINGS SEND A WIND WAVE", gust: true },
+  winter_reaper:   { text: "3RD HIT FREEZES FOR 1 S", freeze: 1 },
+  grim_death:      { text: "KILLS +8 MANA. 3RD HIT: POISON CLOUD", killMana: 8, cloud: true },
+  blood_moon:      { text: "HEAL 2 HP PER HIT. HITS BLEED", heal: 2, dot: { dps: 4, time: 3, color: "#c01818" } },
+  soul_harvester:  { text: "KILLS +1 GOLD +5 MANA. 3RD HIT PULLS IN", gold: 1, killMana: 5, pull: true },
+  eclipse_scythe:  { text: "3RD HIT: LIGHT BEAM AND FIRE PATCH", beam: true, patch: true }
 };
 function swordPerk() { return SWORD_PERKS[skinState.equipped] || {}; }
 
@@ -3154,7 +3281,7 @@ function drawPerks() {
 
 function actionTick(dt) {
   const spec = player.act;
-  player.actT += dt;
+  player.actT += dt * (spec.basic ? typeStats().speed || 1 : 1);   // daggers swing faster, axes slower
   spec.hits.forEach((h, i) => {
     if (!player.fired[i] && player.actT >= spec.hitT[i]) { player.fired[i] = true; dealHit(h); }
   });
@@ -4444,6 +4571,7 @@ function tintedTrail(sheet, color) {
 // particles in that slash's style coming off the blade (the same look as on their shop card).
 const SWAY_SHEETS = { idle: 2.2, run: 9, jump: 4, jump_peak: 4, fall: 4 };   // sway speed per sheet
 const HELD_BLADE = 32;   // sprite pixels from the grip to the tip (tools/make_hold.py: HELD_LEN, held 10% up)
+let heldBlade = HELD_BLADE;   // the held weapon's own blade length (hold-data's blade; the swords use HELD_BLADE)
 function drawHeldWeapon(skin, sheet, frame) {
   const grip = (HOLD.hero[sheet] || [])[frame];
   if (!grip) return;
@@ -4455,6 +4583,7 @@ function drawHeldWeapon(skin, sheet, frame) {
   const bob = fx && speed ? Math.round(Math.sin(t * 3)) : 0;
   const gx = grip[0], gy = grip[1] + bob;
   const img = HELD_IMGS[skin.img];
+  heldBlade = w.blade || HELD_BLADE;
   ctx.save();
   ctx.translate(gx, gy);
   ctx.rotate(ang - w.ang);
@@ -4490,7 +4619,7 @@ function drawGlint(along, t, skin) {
   const period = skin.rarity === "legendary" ? 1.6 : skin.slash ? 2 : 2.6;
   const p = (t % period) / 0.45;
   if (p >= 1) return;
-  const [x, y] = along(4 + (HELD_BLADE - 6) * p);
+  const [x, y] = along(4 + (heldBlade - 6) * p);
   const a = Math.sin(p * Math.PI), r = Math.round(1 + 2 * a);
   ctx.save();
   dot(x, y, 2, "#ffffff", a);
@@ -4509,7 +4638,7 @@ function drawWeaponAura(slash, fx, along, t, legend) {
   for (let i = 0; i < n; i++) {
     const cyc = t * (legend ? 0.9 : 0.7) + i / n;   // each particle loops on its own clock
     const f = cyc % 1, seed = Math.floor(cyc) * 13 + i * 7;
-    const d = 5 + (HELD_BLADE - 6) * rnd(seed), side = (rnd(seed + 3) - 0.5) * 4;
+    const d = 5 + (heldBlade - 6) * rnd(seed), side = (rnd(seed + 3) - 0.5) * 4;
     const [x, y] = along(d, side), fade = Math.sin(f * Math.PI);
     switch (slash) {
       case "crimson": case "dragon": case "feather":   // embers rising off the blade
@@ -4534,9 +4663,9 @@ function drawWeaponAura(slash, fx, along, t, legend) {
         break;
       }
       case "laser": {   // energy racing up both edges of the blade
-        const [lx, ly] = along(f * HELD_BLADE, i % 2 ? 2 : -2);
+        const [lx, ly] = along(f * heldBlade, i % 2 ? 2 : -2);
         dot(lx, ly, 1, col(i), 1 - f * 0.5);
-        const [bx, by] = along(f * HELD_BLADE - 1.5, i % 2 ? 2 : -2);
+        const [bx, by] = along(f * heldBlade - 1.5, i % 2 ? 2 : -2);
         dot(bx, by, 1, col(i), 0.5 - f * 0.4);
         break;
       }
@@ -4546,14 +4675,14 @@ function drawWeaponAura(slash, fx, along, t, legend) {
         break;
       case "clockwork": {   // sparks circling the blade like gear teeth
         const a = t * 4 + i * (Math.PI * 2 / n);
-        const [gx, gy] = along(HELD_BLADE * 0.55 + Math.cos(a) * HELD_BLADE * 0.4, Math.sin(a) * 4);
+        const [gx, gy] = along(heldBlade * 0.55 + Math.cos(a) * heldBlade * 0.4, Math.sin(a) * 4);
         dot(gx, gy, i % 2 ? 2 : 1, col(i), 0.6 + 0.4 * Math.sin(a));
         break;
       }
       case "thunder":   // lightning crackling along the blade, flickering on and off
         if (i === 0 && rnd(Math.floor(t * 14)) > 0.35) {
           const k = Math.floor(t * 14);
-          for (let p = 2; p < HELD_BLADE; p += 1) {
+          for (let p = 2; p < heldBlade; p += 1) {
             const [ex, ey] = along(p, (rnd(k * 31 + Math.floor(p / 3)) - 0.5) * 6);
             dot(ex, ey, 1, p % 4 ? "#fff04d" : "#ffffff", 0.95);
           }
