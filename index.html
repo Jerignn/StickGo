@@ -579,7 +579,7 @@ if (devGold > 0) {
   localStorage.setItem("stickgo-dev-grant", DEV_GRANT_ID);
 }
 // The phone app gets a one-time gift of gold. Bump BONUS_ID to give it again.
-const PHONE_BONUS = 10000, BONUS_ID = "1";
+const PHONE_BONUS = 50000, BONUS_ID = "2";
 if (onPhone && localStorage.getItem("stickgo-bonus-grant") !== BONUS_ID) {
   totalGold += PHONE_BONUS;
   localStorage.setItem("stickgo-gold", totalGold);
