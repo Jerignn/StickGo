@@ -390,6 +390,7 @@
     text-shadow: 0 1px 2px #000;
   }
   .card .tag { font: bold 11px "Courier New", monospace; letter-spacing: 3px; }
+  .card .perk { color: #9fe3ff; font: bold 10px "Courier New", monospace; line-height: 1.15; min-height: 2.3em; text-align: center; text-shadow: 0 1px 2px #000; }
   .store-menu .card button { min-width: 0; width: 100%; padding: 6px 8px; font-size: 15px; }
   .store-menu .card button.cant,
   .store-menu .card button.owned { opacity: 0.55; }
@@ -586,7 +587,7 @@ if (onPhone && localStorage.getItem("stickgo-bonus-grant") !== BONUS_ID) {
   localStorage.setItem("stickgo-bonus-grant", BONUS_ID);
 }
 
-// --- Sword skins (cosmetic only: every sword has the same reach) ---
+// --- Sword skins: every sword has the same reach; shop swords add a perk to basic attacks (SWORD_PERKS) ---
 // The shop groups skins by rarity. How a skin is drawn (see drawBlade):
 //   blade = fill colour (null = day/night palette), tip = colour the blade fades to,
 //   edge = outline, hi = highlight ridge, guard = crossguard and grip, gem = jewel on the guard,
@@ -734,6 +735,8 @@ function reset() {
   popups = [];
   sparks = [];
   fxParts = [];
+  zones = []; shots = []; bolts = []; perkHits = 0;
+  player.revived = false;
   impacts = [];
   bossBanner = null;
   wave = 0;
@@ -914,6 +917,7 @@ function swordCard(id) {
   card.innerHTML = `<canvas width="320" height="128"></canvas>
     <div class="name">${skin.name}</div>
     <div class="tag" style="color:${info.color}">${info.label}</div>
+    <div class="perk">${(SWORD_PERKS[id] || { text: "NO PERK" }).text}</div>
     <button></button>`;
   const canvas = card.querySelector("canvas");
   if (skin.fx || skin.glow || skin.slash) canvas.dataset.anim = id;   // animated while the menu is open
@@ -2267,6 +2271,7 @@ function inputDir() {
 
 function startWave(n) {
   wave = n;
+  player.revived = false;
   reachWave(n);
   setMapForWave(n);
   waveBanner = 2.2;
@@ -2318,9 +2323,10 @@ function spawnFoe(portal) {
 }
 
 // --- Enemy behaviour ---
-function updateFoes(dt) {
+function updateFoes(dt0) {
   const pcx = player.x + player.w / 2;
   for (const o of foes) {
+    const dt = dt0 * foeTime(o);   // slowed or frozen by a sword perk
     const d = FOES[o.kind];
     const ocx = o.x + o.w / 2, dx = pcx - ocx, dist = Math.abs(dx), toward = dx >= 0 ? 1 : -1;
     o.stagger = Math.max(0, o.stagger - dt);
@@ -2458,6 +2464,14 @@ function hurtPlayer(dmg, fromX) {
   const away = player.x + player.w / 2 >= fromX ? 1 : -1;
   player.x = Math.max(8, Math.min(W - 8 - player.w, player.x + away * 22));   // shoved away
   burst(player.x + player.w / 2, player.y + 24, 8, "#ffe14d", 220);
+  if (player.hp <= 0 && swordPerk().revive && !player.revived) {   // phoenix blade: back up once per wave
+    player.revived = true;
+    player.hp = 35;
+    player.inv = 1.5;
+    burst(player.x + player.w / 2, player.y + 30, 30, "#ff8a1f", 320);
+    popups.push({ x: player.x + player.w / 2, y: player.y - 20, t: 0, text: "REBORN!", perk: true, life: 1.4 });
+    sfx.skill();
+  }
   if (player.hp <= 0) { player.hp = 0; die(); }
 }
 
@@ -2483,6 +2497,9 @@ function startAction(spec) {
 // Lands one hit of the current action on every enemy in its reach
 function dealHit(hit) {
   const f = player.facing, pcx = player.x + player.w / 2;
+  const basic = !!(player.act && player.act.basic), perk = basic ? swordPerk() : {};
+  const finisher = basic && player.act === COMBO[COMBO.length - 1];
+  const struck = [];
   for (const o of foes) {
     if (o.dead || (!o.solid && !hit.screen)) continue;   // a ghost between flickers can't be touched
     const ocx = o.x + o.w / 2;
@@ -2490,20 +2507,23 @@ function dealHit(hit) {
     if (!hit.screen && (ahead < -hit.back - o.w / 2 || ahead > hit.front + o.w / 2)) continue;
     if (!hit.screen && player.y + player.h < GROUND_Y - 70) continue;   // too high above them to reach
     // A guard's shield stops anything from the side he's facing; only the ultimate gets past
-    if (o.shield && !hit.screen && o.dir === (pcx >= ocx ? 1 : -1)) {
+    if (o.shield && !hit.screen && !perk.pierce && o.dir === (pcx >= ocx ? 1 : -1)) {
       sfx.clang();
       burst(o.x + o.w / 2 + o.dir * 12, o.y + 30, 6, "#d6e4f0", 200);
       popups.push({ x: ocx, y: o.y - 10, t: 0, text: "BLOCK" });
       continue;
     }
     // Only the 3rd swing of the combo staggers; the first two just hurt, so enemies can still fight back
-    const light = player.act && player.act.basic && player.act !== COMBO[COMBO.length - 1];
-    hurtFoe(o, hit.dmg, f * hit.kb * (light ? LIGHT_PUSH : 1), !light);
+    const light = basic && !finisher && !perk.stagger;
+    hurtFoe(o, basic ? perkDamage(perk, o, finisher, hit.dmg) : hit.dmg, f * hit.kb * (perk.kb || 1) * (light ? LIGHT_PUSH : 1), !light);
+    if (basic) { perkOnHit(perk, o, finisher); struck.push(o); }
   }
+  if (basic) perkOnSwing(perk, finisher, struck[0], hit, struck);
   foes = foes.filter((o) => !o.dead);
 }
 
-function hurtFoe(o, dmg, push, stagger = true) {
+function hurtFoe(o, dmg, push, stagger = true, quiet = false) {
+  if (o.dead) return;
   o.hp -= dmg;
   if (o.hp <= 0) {
     const d = FOES[o.kind];
@@ -2519,11 +2539,254 @@ function hurtFoe(o, dmg, push, stagger = true) {
   o.x = Math.max(-10, Math.min(W + 10 - o.w, o.x + push * (heavy ? 0.3 : 1)));
   if (stagger && o.kind !== "boss" && o.ai !== "charge") { o.stagger = heavy ? 0.2 : 0.4; o.ai = "walk"; o.timer = 0; o.attack = 0; o.draw = 0; }
   o.flash = 0.12;
-  shakeTime = Math.max(shakeTime, 0.08);
   popups.push({ x: o.x + o.w / 2, y: o.y - 10, t: 0, text: String(dmg), dmg: true, hue: Math.random() * 360 });
+  if (quiet) return;
+  shakeTime = Math.max(shakeTime, 0.08);
   if (player.act && player.act.basic && weaponFx()) { weaponImpact(o); return; }
   burst(o.x + o.w / 2, o.y + 40, 8, "#ffe14d", 240);
   sfx.clang();
+}
+
+// --- Sword perks: every shop sword adds something to his BASIC attacks (never to skills) ---
+// Commons tweak numbers, uncommons and rares add an on-hit effect, and most legendaries go off on
+// the 3rd hit of the combo (the finisher). text is what the shop and inventory cards show.
+const SWORD_PERKS = {
+  rusty:         { text: "+5% DAMAGE", dmg: 1.05 },
+  wooden:        { text: "+25% KNOCKBACK", kb: 1.25 },
+  cleaver:       { text: "BIG KNOCKBACK, EVERY HIT STAGGERS", kb: 1.6, stagger: true },
+  cutlass:       { text: "KILLS DROP +1 GOLD", gold: 1 },
+  iron:          { text: "+10% DAMAGE", dmg: 1.1 },
+  serrated:      { text: "HITS BLEED (3 DMG/S, 3 S)", dot: { dps: 3, time: 3, color: "#c01818" } },
+  frost_staff:   { text: "25% CHANCE TO SLOW", slowChance: 0.25 },
+  void_blade:    { text: "20% CHANCE OF DOUBLE DAMAGE", critChance: 0.2 },
+  vine:          { text: "HEAL 1 HP PER HIT", heal: 1 },
+  bone:          { text: "KILLS RESTORE +5 MANA", killMana: 5 },
+  inferno:       { text: "HITS BURN, BURN SPREADS ON KILL", dot: { dps: 4, time: 3, color: "#ff6a1a", fire: true }, spread: true },
+  shadow:        { text: "HITS FROM BEHIND DEAL X2", backstab: 2 },
+  gale:          { text: "SWINGS SEND A WIND WAVE", gust: true },
+  glacier:       { text: "3RD HIT FREEZES FOR 1 S", freeze: 1 },
+  phoenix:       { text: "3RD HIT: FIRE PATCH. REVIVE ONCE PER WAVE", patch: true, revive: true },
+  plasma:        { text: "PIERCES SHIELDS, 3RD HIT +50%", pierce: true, finisherDmg: 1.5 },
+  nebula:        { text: "3RD HIT PULLS ENEMIES IN", pull: true },
+  seraph:        { text: "3RD HIT FIRES A LIGHT BEAM", beam: true },
+  ember_feather: { text: "3RD HIT THROWS 3 FIRE FEATHERS", feathers: true },
+  thunder:       { text: "3RD HIT CHAINS LIGHTNING TO 2", chain: 2 },
+  toxic:         { text: "3RD HIT LEAVES A POISON CLOUD", cloud: true },
+  gearblade:     { text: "EVERY 5TH HIT IS A CRIT (X2)", every: 5 }
+};
+function swordPerk() { return SWORD_PERKS[skinState.equipped] || {}; }
+
+let zones = [];    // fire patches, poison clouds and pull vortexes on the ground
+let shots = [];    // wind waves and fire feathers flying out of his swings
+let bolts = [];    // lightning and light beams (just drawn for a moment)
+let perkHits = 0;  // basic hits landed this run (the clockwork blade's every-5th crit)
+
+// Basic-hit damage after the perk: bonus %, finisher bonus, backstab, crits
+function perkDamage(perk, o, finisher, dmg) {
+  let m = perk.dmg || 1, label = "";
+  if (finisher && perk.finisherDmg) m *= perk.finisherDmg;
+  if (perk.backstab && o.dir === player.facing) { m *= perk.backstab; label = "BACKSTAB!"; }
+  if ((perk.critChance && Math.random() < perk.critChance) || (perk.every && ++perkHits % perk.every === 0)) { m *= 2; label = "CRIT!"; }
+  if (label) popups.push({ x: o.x + o.w / 2, y: o.y - 30, t: 0, text: label, perk: true });
+  return Math.round(dmg * m);
+}
+
+// After a basic hit lands on o (which may have just died)
+function perkOnHit(perk, o, finisher) {
+  if (perk.heal) player.hp = Math.min(PLAYER_MAX_HP, player.hp + perk.heal);
+  if (o.dead) {
+    if (perk.gold) dropGold(o.x + o.w / 2, o.y + 20, perk.gold, o.y - 30);
+    if (perk.killMana) {
+      player.mana = Math.min(MANA_MAX, player.mana + perk.killMana);
+      popups.push({ x: player.x + player.w / 2, y: player.y - 12, t: 0, text: `+${perk.killMana} MANA` });
+    }
+    return;
+  }
+  if (perk.dot) o.dot = { ...perk.dot, tick: 0.5 };
+  if (perk.slowChance && Math.random() < perk.slowChance) { o.slow = 1.5; burst(o.x + o.w / 2, o.y + 20, 6, "#9fe3ff", 120); }
+  if (finisher && perk.freeze) { o.freeze = o.kind === "boss" ? 0.4 : perk.freeze; burst(o.x + o.w / 2, o.y + 30, 10, "#cdf3ff", 160); }
+}
+
+// Effects of the swing itself (once per basic hit, whether or not it touched anyone)
+function perkOnSwing(perk, finisher, target, hit, struck) {
+  const f = player.facing, pcx = player.x + player.w / 2;
+  const at = target && !target.dead ? target.x + target.w / 2 : pcx + f * 70;
+  if (perk.gust) {
+    shots.push({ kind: "gust", x: pcx + f * 30, y: GROUND_Y - 34, vx: f * 520, vy: 0, t: 0, life: 0.55, dmg: Math.round(hit.dmg * 0.5), hits: new Set(struck), left: 2 });
+  }
+  if (!finisher) return;
+  if (perk.patch) { zones.push({ kind: "fire", x: at, r: 50, t: 0, life: 3, dps: 8, tick: 0 }); sfx.boom(); }
+  if (perk.cloud) { zones.push({ kind: "poison", x: at, r: 64, t: 0, life: 3, dps: 7, tick: 0 }); }
+  if (perk.pull) {
+    zones.push({ kind: "vortex", x: at, r: 200, t: 0, life: 0.5 });
+    for (const o of foes) {
+      const ocx = o.x + o.w / 2;
+      if (o.dead || Math.abs(ocx - at) > 220) continue;
+      o.x += (at - ocx) * (o.kind === "boss" ? 0.25 : 0.6);
+      hurtFoe(o, 6, 0, false, true);
+    }
+  }
+  if (perk.beam) {
+    bolts.push({ kind: "beam", x0: pcx, x1: pcx + f * 560, y: GROUND_Y - 38, t: 0, life: 0.3 });
+    for (const o of foes) {
+      const ahead = (o.x + o.w / 2 - pcx) * f;
+      if (!o.dead && ahead > 0 && ahead < 560 && !struck.includes(o)) hurtFoe(o, Math.round(hit.dmg * 0.6), f * 20, false, true);
+    }
+    sfx.skill();
+  }
+  if (perk.feathers) {
+    for (let i = -1; i <= 1; i++) {
+      shots.push({ kind: "feather", x: pcx + f * 20, y: GROUND_Y - 40, vx: f * 620, vy: i * 70, t: 0, life: 0.8, dmg: 10, hits: new Set(), left: 1, burn: true });
+    }
+  }
+  if (perk.chain && target) {
+    let from = target;
+    const done = new Set([target]);
+    for (let n = 0; n < perk.chain; n++) {
+      const fx = from.x + from.w / 2;
+      const next = foes.filter((o) => !o.dead && !done.has(o) && Math.abs(o.x + o.w / 2 - fx) < 240)
+        .sort((a, b) => Math.abs(a.x - from.x) - Math.abs(b.x - from.x))[0];
+      if (!next) break;
+      bolts.push({ kind: "bolt", x0: fx, y0: from.y + 26, x1: next.x + next.w / 2, y1: next.y + 26, t: 0, life: 0.25, seed: Math.random() * 1000 });
+      hurtFoe(next, Math.round(hit.dmg * 0.6), 0, true, true);
+      burst(next.x + next.w / 2, next.y + 26, 8, "#fff6a0", 200);
+      done.add(next);
+      from = next;
+    }
+    if (done.size > 1) sfx.clang();
+  }
+}
+
+// A burning enemy that dies sets the ones near him on fire (inferno edge)
+function spreadBurn(o) {
+  if (!o.dot || !o.dot.fire || !swordPerk().spread) return;
+  const ocx = o.x + o.w / 2;
+  for (const p of foes) {
+    if (p === o || p.dead || Math.abs(p.x + p.w / 2 - ocx) > 90) continue;
+    p.dot = { ...o.dot, time: 3, tick: 0.5 };
+    burst(p.x + p.w / 2, p.y + 30, 6, "#ff6a1a", 150);
+  }
+}
+
+// How fast an enemy's own clock runs: frozen stops him, slowed halves him
+function foeTime(o) { return o.freeze > 0 ? 0 : o.slow > 0 ? 0.5 : 1; }
+
+function updatePerks(dt) {
+  for (const o of foes) {
+    o.freeze = Math.max(0, (o.freeze || 0) - dt);
+    o.slow = Math.max(0, (o.slow || 0) - dt);
+    if (o.dot) {
+      o.dot.time -= dt;
+      o.dot.tick -= dt;
+      if (Math.random() < dt * 12) burst(o.x + o.w / 2 + (Math.random() - 0.5) * o.w, o.y + Math.random() * o.h * 0.7, 1, o.dot.color, 60);
+      if (o.dot.tick <= 0) { o.dot.tick = 0.5; hurtFoe(o, Math.max(1, Math.round(o.dot.dps * 0.5)), 0, false, true); }
+      if (o.dot && o.dot.time <= 0) o.dot = null;
+    }
+  }
+  for (const z of zones) {
+    z.t += dt;
+    if (!z.dps) continue;
+    z.tick -= dt;
+    if (z.tick > 0) continue;
+    z.tick = 0.5;
+    for (const o of foes) if (!o.dead && Math.abs(o.x + o.w / 2 - z.x) < z.r + o.w / 2) hurtFoe(o, Math.round(z.dps * 0.5), 0, false, true);
+  }
+  zones = zones.filter((z) => z.t < z.life);
+  for (const s of shots) {
+    s.t += dt;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    for (const o of foes) {
+      if (o.dead || !o.solid || s.hits.has(o) || s.left <= 0) continue;
+      if (Math.abs(o.x + o.w / 2 - s.x) < o.w / 2 + 10 && s.y > o.y && s.y < o.y + o.h) {
+        s.hits.add(o);
+        s.left--;
+        hurtFoe(o, s.dmg, Math.sign(s.vx) * 16, false, true);
+        if (s.burn && !o.dead) o.dot = { dps: 4, time: 2, color: "#ff6a1a", fire: true, tick: 0.5 };
+        burst(s.x, s.y, 5, s.kind === "gust" ? "#e6f6ff" : "#ffb02e", 150);
+      }
+    }
+  }
+  shots = shots.filter((s) => s.t < s.life && s.left > 0 && s.x > -40 && s.x < W + 40);
+  for (const b of bolts) b.t += dt;
+  bolts = bolts.filter((b) => b.t < b.life);
+  foes = foes.filter((o) => !o.dead);
+}
+
+// Ground effects, status marks on enemies, and the flying perk shots
+function drawPerks() {
+  const now = performance.now() / 1000;
+  for (const z of zones) {
+    const k = z.t / z.life, fade = Math.min(1, (z.life - z.t) / 0.4);
+    if (z.kind === "fire") {
+      for (let i = 0; i <= 10; i++) {
+        const x = z.x - z.r + (i * z.r * 2) / 10, h = 8 + Math.abs(Math.sin(now * 14 + i * 1.7)) * 12;
+        ctx.globalAlpha = fade;
+        ctx.fillStyle = "#ff5a1a"; ctx.fillRect(snap(x), snap(GROUND_Y - h), PX * 2, snap(h));
+        ctx.fillStyle = "#ffe14d"; ctx.fillRect(snap(x), snap(GROUND_Y - h * 0.5), PX * 2, snap(h * 0.5));
+      }
+    } else if (z.kind === "poison") {
+      ctx.globalAlpha = 0.32 * fade;
+      ctx.fillStyle = "#6fdc3a";
+      pixEllipse(z.x, GROUND_Y - 22, z.r, 24);
+      ctx.globalAlpha = 0.7 * fade;
+      ctx.fillStyle = "#b6ff7a";
+      for (let i = 0; i < 6; i++) {
+        const bx = z.x + Math.sin(i * 2.3) * z.r * 0.8, by = GROUND_Y - ((now * 30 + i * 13) % 46);
+        ctx.fillRect(snap(bx), snap(by), PX, PX);
+      }
+    } else if (z.kind === "vortex") {
+      ctx.globalAlpha = 1 - k;
+      ctx.strokeStyle = "#b266ff";
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(z.x, GROUND_Y - 36, z.r * (1 - k) * 0.5 + 6, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+  for (const o of foes) {
+    if (o.freeze > 0) {
+      ctx.fillStyle = "rgba(170, 225, 255, 0.5)";
+      ctx.fillRect(snap(o.x - 4), snap(o.y), snap(o.w + 8), snap(o.h));
+    } else if (o.slow > 0) {
+      ctx.fillStyle = "#9fe3ff";
+      for (let i = 0; i < 3; i++) ctx.fillRect(snap(o.x + o.w / 2 - 9 + i * 9), snap(o.y - 14 + Math.sin(now * 6 + i) * 3), PX, PX);
+    }
+  }
+  for (const s of shots) {
+    const d = Math.sign(s.vx);
+    if (s.kind === "gust") {
+      ctx.globalAlpha = 1 - s.t / s.life;
+      ctx.strokeStyle = "#e6f6ff";
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(s.x - d * 10, s.y, 20, d > 0 ? -1.1 : Math.PI - 1.1, d > 0 ? 1.1 : Math.PI + 1.1); ctx.stroke();
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.fillStyle = "#ff6a1a"; ctx.fillRect(snap(s.x - (d > 0 ? 15 : 0)), snap(s.y), 15, PX);
+      ctx.fillStyle = "#ffe14d"; ctx.fillRect(snap(s.x - (d > 0 ? 3 : 0)), snap(s.y - 1), PX, PX + 2);
+    }
+  }
+  for (const b of bolts) {
+    const k = b.t / b.life;
+    ctx.save();
+    ctx.globalAlpha = 1 - k;
+    ctx.shadowColor = b.kind === "beam" ? "#fff6c0" : "#fff6a0";
+    ctx.shadowBlur = 14;
+    if (b.kind === "beam") {
+      const h = 16 * (1 - k) + 4;
+      ctx.fillStyle = "#ffe98a"; ctx.fillRect(Math.min(b.x0, b.x1), b.y - h / 2, Math.abs(b.x1 - b.x0), h);
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(Math.min(b.x0, b.x1), b.y - h / 6, Math.abs(b.x1 - b.x0), h / 3);
+    } else {
+      const r = seeded(Math.floor(b.seed + b.t * 30));
+      ctx.strokeStyle = "#fff6a0";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(b.x0, b.y0);
+      for (let i = 1; i < 6; i++) ctx.lineTo(b.x0 + ((b.x1 - b.x0) * i) / 6, b.y0 + ((b.y1 - b.y0) * i) / 6 + (r() - 0.5) * 26);
+      ctx.lineTo(b.x1, b.y1);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 
 function actionTick(dt) {
@@ -2670,6 +2933,7 @@ function update(dt) {
   }
   portals = portals.filter((p) => p.t < 1.4);
   updateFoes(dt);
+  updatePerks(dt);
   updateProjectiles(dt);
 
   for (const p of popups) { p.t += dt; p.y -= 40 * dt; }
@@ -2714,6 +2978,7 @@ function drawGoldPopup(p) {
 
 function killEnemy(o, gold = 1 + Math.floor(Math.random() * 3)) {
   o.dead = true;
+  spreadBurn(o);
   shakeTime = Math.max(shakeTime, o.scale ? 0.25 : 0.1);
   sfx.kill();
   // He topples away from the blow and plays his death animation
@@ -4121,6 +4386,7 @@ function draw() {
   for (const c of corpses) drawCorpse(c);
   portals.forEach(drawPortal);
   for (const o of foes) drawFoe(o);
+  drawPerks();
   drawProjectiles();
   coins.forEach(drawCoin);
   potions.forEach(drawPotion);
@@ -4143,6 +4409,7 @@ function draw() {
     if (p.gold) drawGoldPopup(p);
     else if (p.dmg) drawDmgText(look.equipped.dmg, p.text, p.x, p.y, p.t, p.hue);
     else if (p.unlock) drawDmgText("gold", p.text, p.x, p.y + p.t * 40, 1, 0);
+    else if (p.perk) drawDmgText("fire", p.text, p.x, p.y, p.t, 0);
     else {
       ctx.fillStyle = colors.ink;
       ctx.font = "bold 16px 'Courier New', monospace";
