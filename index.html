@@ -834,7 +834,7 @@
   <div class="store-top"><button class="back-btn" data-action="lookBack">BACK</button><h1>CUSTOMIZE</h1><span class="gold-chip" id="lookGold"></span></div>
   <div class="store-body look-body">
     <div class="look-left">
-      <canvas id="lookPreview" width="240" height="300"></canvas>
+      <canvas id="lookPreview" width="400" height="330"></canvas>
       <button class="small-btn" data-action="lookRandom">RANDOM</button>
     </div>
     <div class="look-side">
@@ -995,7 +995,7 @@ if (devGold > 0) {
   localStorage.setItem("stickgo-dev-grant", DEV_GRANT_ID);
 }
 // The phone app gets a one-time gift of gold. Bump BONUS_ID to give it again.
-const PHONE_BONUS = 50000, BONUS_ID = "2";
+const PHONE_BONUS = 100000, BONUS_ID = "3";
 if (onPhone && localStorage.getItem("stickgo-bonus-grant") !== BONUS_ID) {
   totalGold += PHONE_BONUS;
   localStorage.setItem("stickgo-gold", totalGold);
@@ -2127,7 +2127,7 @@ function drawLookPreview() {
   pvLast = now;
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, cv.width, cv.height);
-  const sc = 4.2, k = sc / SC, ox = cv.width / 2 + 6 * sc, oy = cv.height - 28;
+  const sc = 3.3, k = sc / SC, ox = cv.width / 2 + 6 * sc, oy = cv.height - 24;
   const lk = look.equipped, running = lookTab === "trail";
   const tr = TRAILS[lk.trail], au = AURAS[lk.aura], cfx = COIN_FX[lk.coin];
 
@@ -2890,6 +2890,13 @@ const SKILL_ICON = Object.fromEntries(Object.keys(TREE_SKILLS).map((id, i) => [i
 const progress = { xp: 0, learned: {} };
 try { Object.assign(progress, JSON.parse(localStorage.getItem("stickgo-progress") || "{}")); } catch (e) { /* defaults */ }
 for (const id of Object.keys(progress.learned)) if (!TREE_SKILLS[id]) delete progress.learned[id];
+// The phone app gets a one-time gift of skill points (enough for every skill). Bump POINTS_GIFT_ID to give it again.
+const POINTS_GIFT = 40, POINTS_GIFT_ID = "1";
+if (onPhone && localStorage.getItem("stickgo-points-gift") !== POINTS_GIFT_ID) {
+  progress.bonus = (progress.bonus || 0) + POINTS_GIFT;
+  localStorage.setItem("stickgo-progress", JSON.stringify(progress));
+  localStorage.setItem("stickgo-points-gift", POINTS_GIFT_ID);
+}
 function saveProgress() { localStorage.setItem("stickgo-progress", JSON.stringify(progress)); }
 
 // Level n needs 400 + 100 * (n - 1) more XP to reach level n + 1
@@ -2903,7 +2910,7 @@ const skillValue = (id) => (skillLevel(id) ? TREE_SKILLS[id].v[skillLevel(id) - 
 const treeOf = (id) => Object.keys(SKILL_TREES).find((t) => SKILL_TREES[t].tiers.flat().includes(id));
 const tierOf = (id) => SKILL_TREES[treeOf(id)].tiers.findIndex((row) => row.includes(id));
 const spentIn = (tree) => SKILL_TREES[tree].tiers.flat().reduce((n, id) => n + skillLevel(id), 0);
-const pointsLeft = () => levelOf(progress.xp).lv - Object.values(progress.learned).reduce((a, b) => a + b, 0);
+const pointsLeft = () => levelOf(progress.xp).lv + (progress.bonus || 0) - Object.values(progress.learned).reduce((a, b) => a + b, 0);
 
 // What the skills change in a run
 function maxHp() { return PLAYER_MAX_HP + skillValue("tough"); }
@@ -4930,6 +4937,79 @@ function tintedTrail(sheet, color) {
 // particles in that slash's style coming off the blade (the same look as on their shop card).
 const SWAY_SHEETS = { idle: 2.2, run: 9, jump: 4, jump_peak: 4, fall: 4 };   // sway speed per sheet
 const HELD_BLADE = 32;   // sprite pixels from the grip to the tip (tools/make_hold.py: HELD_LEN, held 10% up)
+// How each kind of weapon is held and swung. His body comes from the scythe sheets, so his hand moves the
+// same way whatever he holds; what differs is the weapon's angle and reach in that hand:
+//   hold  = its angle while he stands, runs or is in the air (0 = straight ahead, -PI/2 = up; null = like the scythe)
+//   slide = how far along its own length it sits in his hand (negative = held further up the haft)
+//   swing = how it moves through the three basic attacks (null = the scythe's sweeping slash)
+const HOLD_STYLES = {
+  sword:  { hold: -0.95, swing: null },
+  spear:  { hold: -1.3, slide: -12, swing: "thrust" },
+  axe:    { hold: -2.45, slide: -2, swing: "chop" },
+  dagger: { hold: 1.9, swing: "stab" },
+  scythe: { hold: null, swing: null }
+};
+const ATTACK_SHEETS = { attack1: 0, attack2: 1, attack3: 2 };
+const easeOut = (x) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+const swingsOwnWay = (skin, sheet) => !!HOLD_STYLES[skin.type || "sword"].swing && ATTACK_SHEETS[sheet] !== undefined;
+
+// The weapon's pose this frame: its angle, how far it is pushed along its length, and (while it swings
+// its own way) which motion, how far through it is (p) and which way it turns (dir)
+function heldPose(skin, sheet, frame, grip) {
+  const style = HOLD_STYLES[skin.type || "sword"], n = ATTACK_SHEETS[sheet];
+  if (swingsOwnWay(skin, sheet)) {
+    const p = (frame + 0.5) / SHEET_FRAMES[sheet];
+    if (style.swing === "thrust") {   // straight jabs ahead; the finisher drives upward and further
+      const out = Math.sin(Math.min(1, p * 1.5) * Math.PI);
+      return { ang: n === 2 ? -0.45 + 0.3 * p : n === 1 ? 0.12 : -0.08, slide: -14 + out * (n === 2 ? 22 : 16), motion: "thrust", p, out };
+    }
+    if (style.swing === "chop") {   // raised high behind him, then brought down hard in front (the 2nd swing goes back up)
+      const from = n === 1 ? -0.4 : -2.2, to = n === 1 ? -3.6 : n === 2 ? 1.25 : 0.95;
+      const ang = p < 0.3 ? from - 0.3 * Math.sign(to - from) * (p / 0.3)
+        : from - 0.3 * Math.sign(to - from) + (to - from + 0.3 * Math.sign(to - from)) * easeOut((p - 0.3) / 0.35);
+      return { ang, slide: style.slide || 0, motion: "chop", p, dir: Math.sign(to - from) };
+    }
+    const out = Math.abs(Math.sin(p * Math.PI * (n === 2 ? 1 : 2)));   // stab: quick jabs, two per swing
+    return { ang: n === 2 ? -0.3 : n === 1 ? 0.3 : 0.05, slide: -6 + out * 12, motion: "stab", p, out };
+  }
+  if (SWAY_SHEETS[sheet] && style.hold != null) return { ang: style.hold, slide: style.slide || 0 };
+  return { ang: grip[2], slide: 0 };
+}
+
+// What his own-way swings leave behind: an arc behind a chopping blade, streaks behind a jab
+function drawMotionTrail(pose, ang, gx, gy, color) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  if (pose.motion === "chop") {
+    if (pose.p < 0.3) { ctx.restore(); return; }   // nothing while it is raised
+    ctx.globalAlpha = 0.6 * (1 - Math.max(0, pose.p - 0.65) / 0.35);
+    ctx.lineWidth = 4;
+    const sweep = 1.5 * pose.dir;
+    ctx.beginPath();
+    ctx.arc(gx, gy, heldBlade * 0.8, Math.min(ang - sweep, ang), Math.max(ang - sweep, ang));
+    ctx.stroke();
+    ctx.globalAlpha *= 0.5;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(gx, gy, heldBlade * 0.5, Math.min(ang - sweep, ang), Math.max(ang - sweep, ang));
+    ctx.stroke();
+  } else {
+    const c = Math.cos(ang), s = Math.sin(ang), len = heldBlade * (pose.motion === "thrust" ? 1.1 : 0.9);
+    for (const side of [-3, 0, 3]) {
+      ctx.globalAlpha = pose.out * (side ? 0.35 : 0.6);
+      for (let d = len * 0.35; d < len; d += 2) {
+        if ((d + side * 7) % 6 < 2) continue;   // broken streaks, like speed lines
+        ctx.fillRect(Math.round(gx + c * d - s * side), Math.round(gy + s * d + c * side), 1, 1);
+      }
+    }
+    ctx.globalAlpha = pose.out * 0.8;   // a flash at the tip at full reach
+    const tx = gx + c * len, ty = gy + s * len;
+    ctx.fillRect(Math.round(tx) - 1, Math.round(ty), 3, 1);
+    ctx.fillRect(Math.round(tx), Math.round(ty) - 1, 1, 3);
+  }
+  ctx.restore();
+}
 let heldBlade = HELD_BLADE;   // the held weapon's own blade length (hold-data's blade; the swords use HELD_BLADE)
 function drawHeldWeapon(skin, sheet, frame) {
   const grip = (HOLD.hero[sheet] || [])[frame];
@@ -4937,10 +5017,11 @@ function drawHeldWeapon(skin, sheet, frame) {
   const w = HOLD.weapons[skin.img], t = performance.now() / 1000;
   const fx = skin.slash ? WEAPON_FX[skin.slash] : null, legend = skin.rarity === "legendary";
   const speed = SWAY_SHEETS[sheet];
-  const ang = grip[2] + (speed ? Math.sin(t * speed) * (sheet === "run" ? 0.09 : 0.07) : 0);
+  const pose = heldPose(skin, sheet, frame, grip);
+  const ang = pose.ang + (speed ? Math.sin(t * speed) * (sheet === "run" ? 0.09 : 0.07) : 0);
   // Like on their shop card, rare and legendary ones float: a slow bob while he isn't swinging
   const bob = fx && speed ? Math.round(Math.sin(t * 3)) : 0;
-  const gx = grip[0], gy = grip[1] + bob;
+  const gx = grip[0] + Math.cos(ang) * pose.slide, gy = grip[1] + bob + Math.sin(ang) * pose.slide;
   const img = HELD_IMGS[skin.img];
   heldBlade = w.blade || HELD_BLADE;
   ctx.save();
@@ -4959,6 +5040,7 @@ function drawHeldWeapon(skin, sheet, frame) {
   }
   ctx.drawImage(img, -w.gx, -w.gy);
   ctx.restore();
+  if (pose.motion) drawMotionTrail(pose, ang, gx, gy, trailColor(skin));
   // A point d pixels up the blade and `side` pixels across it, in sprite pixels
   const c = Math.cos(ang), s = Math.sin(ang);
   const along = (d, side = 0) => [gx + c * d - s * side, gy + s * d + c * side];
@@ -5076,7 +5158,7 @@ function drawSprite(sheet, frame, cx, feet, face, rot = 0, sc = SC, lk = look.eq
   if (f) ctx.filter = f;
   ctx.drawImage(img, frame * FRAME_W, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
   ctx.filter = "none";
-  if (held) {
+  if (held && !swingsOwnWay(held, sheet)) {
     const trail = tintedTrail(sheet, trailColor(held));
     if (trail) ctx.drawImage(trail, frame * FRAME_W, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
   }
